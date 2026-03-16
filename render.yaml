@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: insightguard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: PYTHONPATH=. python application/app.py
+    envVars:
+      - key: PORT
+        value: 10000

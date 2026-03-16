@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>InsightGuard — Insider Threat Detection</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0c10;--surface:#111318;--card:#161a22;--border:#1e2530;
+  --text:#e2e8f0;--muted:#64748b;--dim:#394152;
+  --red:#f43f5e;--amber:#f59e0b;--green:#10b981;--blue:#3b82f6;--purple:#a855f7;--teal:#06b6d4;
+  --red-dim:rgba(244,63,94,0.12);--amber-dim:rgba(245,158,11,0.12);
+  --green-dim:rgba(16,185,129,0.10);--blue-dim:rgba(59,130,246,0.12);
+  --purple-dim:rgba(168,85,247,0.12);--teal-dim:rgba(6,182,212,0.10);
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;}
+
+/* ── LOGIN PAGE ── */
+#loginPage{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;background:var(--bg);
+  background-image:radial-gradient(circle at 20% 50%, rgba(244,63,94,0.05) 0%, transparent 50%),
+                   radial-gradient(circle at 80% 20%, rgba(59,130,246,0.05) 0%, transparent 50%);
+}
+.login-box{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:40px;width:400px;
+  box-shadow:0 24px 48px rgba(0,0,0,0.4);
+}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px;justify-content:center;}
+.login-logo-icon{width:44px;height:44px;background:var(--red);border-radius:10px;display:flex;align-items:center;justify-content:center;}
+.login-logo-icon svg{width:22px;height:22px;fill:white;}
+.login-title{font-family:var(--mono);font-weight:600;font-size:20px;}
+.login-subtitle{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px;}
+.login-heading{font-size:15px;font-weight:500;margin-bottom:6px;text-align:center;}
+.login-desc{font-size:11px;color:var(--muted);text-align:center;margin-bottom:28px;}
+.login-field{margin-bottom:16px;}
+.login-label{font-size:11px;font-family:var(--mono);color:var(--muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;}
+.login-input{
+  width:100%;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:10px 14px;color:var(--text);
+  font-family:var(--mono);font-size:13px;outline:none;transition:border-color 0.2s;
+}
+.login-input:focus{border-color:var(--blue);}
+.login-input.error{border-color:var(--red);}
+.login-btn{
+  width:100%;background:var(--blue);border:none;border-radius:8px;
+  padding:12px;color:white;font-family:var(--mono);font-size:13px;
+  font-weight:500;cursor:pointer;transition:all 0.2s;margin-top:8px;
+}
+.login-btn:hover{background:#2563eb;}
+.login-btn:active{transform:scale(0.98);}
+.login-error{
+  background:var(--red-dim);border:1px solid rgba(244,63,94,0.3);
+  border-radius:6px;padding:10px 14px;font-size:12px;color:var(--red);
+  font-family:var(--mono);margin-top:12px;display:none;
+}
+.login-hint{font-size:10px;color:var(--dim);text-align:center;margin-top:16px;font-family:var(--mono);}
+.login-divider{border:none;border-top:1px solid var(--border);margin:20px 0;}
+
+/* ── MAIN APP ── */
+#mainApp{display:none;flex-direction:column;min-height:100vh;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-icon{width:32px;height:32px;background:var(--red);border-radius:7px;display:flex;align-items:center;justify-content:center;}
+.brand-icon svg{width:15px;height:15px;fill:white;}
+.brand-name{font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:0.04em;}
+.brand-sub{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.conn-badge{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid var(--border);}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+.conn-dot.live{background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 1.5s infinite;}
+.conn-dot.connecting{background:var(--amber);animation:blink 0.6s infinite;}
+.conn-dot.offline{background:var(--red);}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+.api-input{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text);font-family:var(--mono);font-size:11px;width:180px;outline:none;}
+.btn{cursor:pointer;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);transition:all 0.15s;}
+.btn:hover{border-color:var(--blue);color:var(--blue);}
+.btn.green-btn{border-color:var(--green);color:var(--green);}
+.btn.red-btn{border-color:var(--red);color:var(--red);}
+.btn.amber-btn{border-color:var(--amber);color:var(--amber);}
+.btn.purple-btn{border-color:var(--purple);color:var(--purple);}
+.btn.logout-btn{border-color:var(--dim);color:var(--muted);}
+.btn.logout-btn:hover{border-color:var(--red);color:var(--red);}
+
+/* Banners */
+.banner-row{display:flex;gap:1px;background:var(--border);}
+.banner{flex:1;padding:6px 14px;display:flex;align-items:center;gap:8px;font-size:10px;font-family:var(--mono);}
+.banner.purple-b{background:var(--purple-dim);color:var(--purple);}
+.banner.teal-b{background:var(--teal-dim);color:var(--teal);}
+.b-dot{width:6px;height:6px;border-radius:50%;}
+.banner.purple-b .b-dot{background:var(--purple);}
+.banner.teal-b   .b-dot{background:var(--teal);}
+.b-desc{opacity:0.7;font-size:9px;}
+.b-stat{margin-left:auto;font-size:9px;}
+
+/* Controls */
+.controls{display:flex;align-items:center;gap:6px;padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;}
+.clabel{font-size:10px;font-family:var(--mono);color:var(--muted);}
+.sens-slider{-webkit-appearance:none;appearance:none;width:90px;height:3px;background:var(--border);border-radius:2px;outline:none;}
+.sens-slider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--blue);cursor:pointer;}
+.sval{font-family:var(--mono);font-size:10px;color:var(--text);min-width:26px;}
+.filter-tabs{display:flex;gap:3px;}
+.ftab{cursor:pointer;font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);}
+.ftab.all.active{border-color:var(--blue);color:var(--blue);background:var(--blue-dim);}
+.ftab.normal.active{border-color:var(--green);color:var(--green);background:var(--green-dim);}
+.ftab.suspicious.active{border-color:var(--blue);color:var(--blue);background:var(--blue-dim);}
+.ftab.high_risk.active{border-color:var(--amber);color:var(--amber);background:var(--amber-dim);}
+.ftab.critical.active{border-color:var(--red);color:var(--red);background:var(--red-dim);}
+
+/* Metrics */
+.metrics-row{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);}
+.metric{background:var(--surface);padding:12px 14px;}
+.metric-label{font-size:9px;font-family:var(--mono);color:var(--muted);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;}
+.metric-val{font-size:22px;font-family:var(--mono);font-weight:600;color:var(--text);}
+.metric-val.red{color:var(--red);}.metric-val.amber{color:var(--amber);}
+.metric-val.green{color:var(--green);}.metric-val.blue{color:var(--blue);}
+.metric-val.purple{color:var(--purple);}.metric-val.teal{color:var(--teal);}
+.metric-sub{font-size:9px;color:var(--muted);font-family:var(--mono);margin-top:2px;}
+.metric-val.flash{animation:numflash 0.4s ease;}
+@keyframes numflash{0%{opacity:0.2;}100%{opacity:1;}}
+
+/* Main grid */
+.main{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);flex:1;}
+.panel{background:var(--surface);overflow:hidden;}
+.panel-full{grid-column:1/-1;}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);}
+.panel-title{font-size:10px;font-family:var(--mono);color:var(--muted);letter-spacing:0.07em;text-transform:uppercase;}
+.panel-count{font-size:9px;font-family:var(--mono);color:var(--dim);}
+.panel-body{padding:10px 14px;overflow-y:auto;max-height:260px;}
+
+/* Feed */
+.alert-item{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:6px;margin-bottom:4px;border-left:2px solid transparent;}
+.alert-item.critical{background:rgba(244,63,94,0.10);border-color:var(--red);}
+.alert-item.high_risk{background:rgba(245,158,11,0.10);border-color:var(--amber);}
+.alert-item.suspicious{background:rgba(59,130,246,0.10);border-color:var(--blue);}
+.alert-item.normal{background:rgba(16,185,129,0.06);border-color:var(--green);}
+.alert-item.hidden{display:none;}
+.alert-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;background:rgba(255,255,255,0.04);}
+.alert-body{flex:1;min-width:0;}
+.alert-user{font-size:12px;font-family:var(--mono);font-weight:600;}
+.alert-desc{font-size:10px;color:var(--muted);margin-top:1px;}
+.alert-meta{display:flex;gap:5px;margin-top:2px;align-items:center;flex-wrap:wrap;}
+.badge{font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:3px;font-weight:500;}
+.badge.critical{background:rgba(244,63,94,0.15);color:var(--red);}
+.badge.high_risk{background:rgba(245,158,11,0.15);color:var(--amber);}
+.badge.suspicious{background:rgba(59,130,246,0.15);color:var(--blue);}
+.badge.normal{background:rgba(16,185,129,0.12);color:var(--green);}
+.mini-tag{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px;}
+.pub-tag{background:var(--teal-dim);color:var(--teal);}
+.pers-tag{background:var(--purple-dim);color:var(--purple);}
+.alert-score{font-size:18px;font-family:var(--mono);font-weight:700;flex-shrink:0;}
+.alert-time{font-size:9px;color:var(--dim);font-family:var(--mono);}
+.new-alert{animation:slideIn 0.3s ease;}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:none;}}
+
+/* Risk bars */
+.risk-row{margin-bottom:10px;}
+.risk-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.risk-name{font-size:11px;font-weight:600;}
+.risk-dept{font-size:9px;color:var(--muted);font-family:var(--mono);margin-left:5px;}
+.risk-right{display:flex;align-items:center;gap:6px;}
+.risk-score-n{font-family:var(--mono);font-size:12px;font-weight:600;}
+.pub-pill{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px;}
+.pub-pill.trained{background:var(--teal-dim);color:var(--teal);}
+.pub-pill.learning{background:rgba(100,116,139,0.1);color:var(--muted);}
+.risk-track{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:2px;}
+.risk-fill{height:100%;border-radius:3px;transition:width 0.6s ease,background 0.4s;}
+.sub-tracks{display:flex;gap:3px;margin-top:1px;}
+.sub-t{flex:1;height:2px;background:var(--border);border-radius:2px;overflow:hidden;}
+.sub-teal{height:100%;background:var(--teal);opacity:0.5;border-radius:2px;transition:width 0.5s;}
+.sub-purple{height:100%;background:var(--purple);opacity:0.5;border-radius:2px;transition:width 0.5s;}
+
+/* Score explain card */
+.explain-card{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:12px;margin:8px 14px 0;}
+.explain-title{font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;}
+.explain-flow{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.ex-step{text-align:center;min-width:72px;}
+.ex-label{font-size:8px;color:var(--muted);font-family:var(--mono);margin-bottom:2px;}
+.ex-val{font-size:16px;font-family:var(--mono);font-weight:600;}
+.ex-sub{font-size:7px;color:var(--dim);font-family:var(--mono);margin-top:1px;}
+.ex-arrow{font-size:12px;color:var(--dim);margin-top:6px;}
+
+/* Behaviour breakdown */
+.beh-row{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 4px;}
+.beh-seg{height:100%;transition:width 0.5s ease;}
+.beh-legend{display:flex;gap:10px;font-size:9px;font-family:var(--mono);color:var(--muted);flex-wrap:wrap;}
+.beh-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle;}
+
+/* Timeline */
+.tl-legend{display:flex;gap:10px;font-size:9px;font-family:var(--mono);color:var(--muted);}
+.tl-line{display:inline-block;width:8px;height:2px;vertical-align:middle;margin-right:3px;}
+
+/* Log table */
+.log-table{width:100%;border-collapse:collapse;font-size:11px;}
+.log-table th{color:var(--muted);font-family:var(--mono);font-weight:500;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:0.05em;text-transform:uppercase;background:var(--card);white-space:nowrap;}
+.log-table td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.log-table tr:last-child td{border:none;}
+.log-table tr.new-row{animation:rowIn 0.4s ease;}
+.log-table tr.clickable{cursor:pointer;transition:background 0.15s;}
+.log-table tr.clickable:hover{background:rgba(59,130,246,0.07);}
+.log-table tr.clickable:hover td:first-child::before{content:'→ ';color:var(--blue);}
+@keyframes rowIn{from{background:rgba(59,130,246,0.10);}to{background:transparent;}}
+.sev-pill{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);padding:2px 7px;border-radius:4px;font-weight:500;}
+.sev-pill.critical{background:rgba(244,63,94,0.15);color:var(--red);}
+.sev-pill.high_risk{background:rgba(245,158,11,0.15);color:var(--amber);}
+.sev-pill.suspicious{background:rgba(59,130,246,0.15);color:var(--blue);}
+.sev-pill.normal{background:rgba(16,185,129,0.12);color:var(--green);}
+.click-hint{font-size:8px;color:var(--dim);font-family:var(--mono);padding:5px 8px;background:var(--card);border-bottom:1px solid var(--border);}
+
+/* ── RISK DETAIL MODAL ── */
+.modal-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);
+  z-index:1000;align-items:center;justify-content:center;padding:20px;
+  backdrop-filter:blur(4px);
+}
+.modal-overlay.open{display:flex;}
+.modal{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;width:100%;max-width:700px;max-height:90vh;
+  overflow-y:auto;box-shadow:0 32px 64px rgba(0,0,0,0.5);
+}
+.modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--surface);z-index:1;
+}
+.modal-title{font-family:var(--mono);font-size:14px;font-weight:600;}
+.modal-close{cursor:pointer;font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);}
+.modal-close:hover{border-color:var(--red);color:var(--red);}
+.modal-body{padding:20px;}
+
+/* Score flow diagram */
+.score-flow{display:flex;align-items:stretch;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.sf-step{flex:1;padding:14px;text-align:center;border-right:1px solid var(--border);background:var(--card);}
+.sf-step:last-child{border-right:none;}
+.sf-step-icon{font-size:16px;margin-bottom:4px;}
+.sf-step-label{font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;}
+.sf-step-val{font-size:26px;font-family:var(--mono);font-weight:700;}
+.sf-step-desc{font-size:9px;color:var(--muted);font-family:var(--mono);margin-top:4px;}
+.sf-arrow-col{display:flex;align-items:center;justify-content:center;padding:0 6px;font-size:16px;color:var(--dim);background:var(--surface);border-right:1px solid var(--border);min-width:24px;}
+
+/* Detail sections */
+.detail-section{margin-bottom:18px;}
+.detail-section-title{font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.detail-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(30,37,48,0.5);}
+.detail-row:last-child{border-bottom:none;}
+.detail-label{font-size:12px;color:var(--muted);}
+.detail-val{font-family:var(--mono);font-size:12px;font-weight:500;}
+.detail-bar-row{padding:8px 0;border-bottom:1px solid rgba(30,37,48,0.5);}
+.detail-bar-row:last-child{border-bottom:none;}
+.detail-bar-header{display:flex;justify-content:space-between;margin-bottom:4px;}
+.detail-bar-label{font-size:11px;color:var(--muted);}
+.detail-bar-val{font-size:11px;font-family:var(--mono);font-weight:500;}
+.detail-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+.detail-bar-fill{height:100%;border-radius:3px;transition:width 0.8s ease;}
+
+/* Rules triggered */
+.rule-tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);padding:4px 10px;border-radius:5px;margin:3px;background:var(--card);border:1px solid var(--border);}
+.rule-tag.triggered{background:var(--red-dim);border-color:rgba(244,63,94,0.3);color:var(--red);}
+.rule-tag.not-triggered{color:var(--dim);}
+
+/* OCEAN personality bars */
+.ocean-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.ocean-item{background:var(--card);border-radius:7px;padding:10px 12px;border:1px solid var(--border);}
+.ocean-label{font-size:10px;font-family:var(--mono);color:var(--muted);margin-bottom:3px;}
+.ocean-name{font-size:11px;font-weight:500;margin-bottom:6px;}
+.ocean-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:4px;}
+.ocean-fill{height:100%;border-radius:3px;}
+.ocean-val{font-size:11px;font-family:var(--mono);font-weight:600;}
+.ocean-risk-note{font-size:9px;color:var(--muted);margin-top:2px;}
+
+/* Validation */
+.val-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;}
+.val-card{background:var(--card);border-radius:6px;padding:10px;border:1px solid var(--border);text-align:center;}
+.val-label{font-size:9px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;margin-bottom:3px;}
+.val-val{font-size:20px;font-weight:600;font-family:var(--mono);}
+.val-desc{font-size:9px;color:var(--muted);margin-top:3px;font-family:var(--sans);}
+.cm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
+.cm-card{border-radius:5px;padding:8px;text-align:center;}
+.cm-label{font-size:8px;font-family:var(--mono);text-transform:uppercase;margin-bottom:2px;}
+.cm-val{font-size:18px;font-weight:600;font-family:var(--mono);}
+.cm-desc{font-size:9px;opacity:0.7;margin-top:2px;}
+
+/* Status bar */
+.statusbar{background:var(--surface);border-top:1px solid var(--border);padding:5px 20px;display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:9px;color:var(--muted);}
+.empty{text-align:center;padding:28px 0;color:var(--dim);font-family:var(--mono);font-size:11px;}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ LOGIN PAGE ══════════════════ -->
+<div id="loginPage">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-logo-icon"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l6 2.67V11c0 3.88-2.66 7.52-6 8.93-3.34-1.41-6-5.05-6-8.93V7.67L12 5z"/></svg></div>
+      <div>
+        <div class="login-title">InsightGuard</div>
+        <div class="login-subtitle">insider threat detection system</div>
+      </div>
+    </div>
+    <hr class="login-divider">
+    <div class="login-heading">Security Administrator Login</div>
+    <div class="login-desc">Access restricted to authorised security personnel only.</div>
+    <div class="login-field">
+      <label class="login-label">Username</label>
+      <input class="login-input" id="loginUser" type="text" placeholder="Enter username" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Password</label>
+      <input class="login-input" id="loginPass" type="password" placeholder="Enter password" autocomplete="current-password">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+    <div class="login-error" id="loginError">Incorrect username or password. Please try again.</div>
+    <div class="login-hint">Hint: admin / insightguard2024</div>
+  </div>
+</div>
+
+<!-- ══════════════════ MAIN APP ══════════════════ -->
+<div id="mainApp">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-icon"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l6 2.67V11c0 3.88-2.66 7.52-6 8.93-3.34-1.41-6-5.05-6-8.93V7.67L12 5z"/></svg></div>
+      <div><div class="brand-name">InsightGuard</div><div class="brand-sub">real-time insider threat detection · PERS + PUB</div></div>
+    </div>
+    <div class="topbar-right">
+      <div class="conn-badge"><div class="conn-dot connecting" id="connDot"></div><span id="connLabel" style="color:var(--muted)">connecting…</span></div>
+      <input class="api-input" id="apiUrl" value="http://localhost:5000">
+      <button class="btn" onclick="reconnect()">connect</button>
+      <button class="btn green-btn"  onclick="triggerSimulate('normal')">✓ normal</button>
+      <button class="btn amber-btn"  onclick="triggerSimulate('random')">⚡ inject</button>
+      <button class="btn red-btn"    onclick="triggerSimulate('critical')">☠ critical</button>
+      <button class="btn purple-btn" onclick="runValidation()">⊞ validate</button>
+      <button class="btn logout-btn" onclick="doLogout()">⎋ logout</button>
+    </div>
+  </div>
+
+  <div class="banner-row">
+    <div class="banner purple-b">
+      <div class="b-dot"></div>
+      <span style="font-weight:600">Novel 1 — PERS</span>
+      <span class="b-desc">Psychometric-Enhanced Risk Scoring · PERS = (Personal Score × 70%) + (Personality Risk × 30%)</span>
+      <span class="b-stat" id="persProfileCount">loading…</span>
+    </div>
+    <div class="banner teal-b">
+      <div class="b-dot"></div>
+      <span style="font-weight:600">Novel 2 — PUB</span>
+      <span class="b-desc">Per-User Baseline · Personal Isolation Forest per employee</span>
+      <span class="b-stat" id="pubStatusBanner">0 / 0 trained</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <span class="clabel">auto-simulate:</span>
+    <button class="btn" id="simBtn" onclick="toggleAutoSim()" style="border-color:var(--green);color:var(--green)">▶ start</button>
+    <span class="clabel" style="margin-left:6px">speed:</span>
+    <input type="range" class="sens-slider" id="speed" min="500" max="5000" value="1500" step="100"
+      oninput="document.getElementById('speedVal').textContent=(+this.value/1000).toFixed(1)+'s'">
+    <span class="sval" id="speedVal">1.5s</span>
+    <button class="btn" onclick="clearAll()" style="margin-left:6px;border-color:var(--dim);color:var(--muted)">✕ clear</button>
+    <div class="filter-tabs" style="margin-left:6px">
+      <span class="clabel">filter:</span>
+      <button class="ftab all active" onclick="setFilter('all')">all</button>
+      <button class="ftab normal"     onclick="setFilter('normal')">normal</button>
+      <button class="ftab suspicious" onclick="setFilter('suspicious')">suspicious</button>
+      <button class="ftab high_risk"  onclick="setFilter('high_risk')">high risk</button>
+      <button class="ftab critical"   onclick="setFilter('critical')">critical</button>
+    </div>
+    <span id="simStatus" style="font-size:9px;font-family:var(--mono);color:var(--muted);margin-left:auto;"></span>
+  </div>
+
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">Total Events</div><div class="metric-val green" id="mEvents">0</div><div class="metric-sub">processed</div></div>
+    <div class="metric"><div class="metric-label">Normal Activity</div><div class="metric-val blue" id="mNormal">0</div><div class="metric-sub">baseline</div></div>
+    <div class="metric"><div class="metric-label">Threats Flagged</div><div class="metric-val red" id="mThreats">0</div><div class="metric-sub">anomalies</div></div>
+    <div class="metric"><div class="metric-label">Users Monitored</div><div class="metric-val amber" id="mUsers">0</div><div class="metric-sub">active</div></div>
+    <div class="metric"><div class="metric-label">Personal Baselines</div><div class="metric-val teal" id="mPubTrained">0</div><div class="metric-sub">PUB trained</div></div>
+    <div class="metric"><div class="metric-label">Avg Risk Boost</div><div class="metric-val purple" id="mPersBoost">+0</div><div class="metric-sub">personality lift</div></div>
+  </div>
+
+  <div class="main">
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Live Activity Feed</span><span class="panel-count" id="alertCount">0 events</span></div>
+      <div class="panel-body" id="alertFeed">
+        <div class="empty">Waiting for events…<br><span style="font-size:9px;display:block;margin-top:4px">Connect → ▶ Start</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="display:flex;flex-direction:column;">
+      <div class="panel-head"><span class="panel-title">Employee Risk Scores</span><span class="panel-count">rolling average</span></div>
+      <div class="panel-body" id="riskBars" style="flex:1;"><div class="empty">No employees monitored yet</div></div>
+      <div class="explain-card" id="explainCard" style="display:none;">
+        <div class="explain-title">Score calculation — last event</div>
+        <div class="explain-flow">
+          <div class="ex-step"><div class="ex-label">Global ML</div><div class="ex-val" id="exML" style="color:var(--muted)">—</div><div class="ex-sub">IF+LOF+UEBA</div></div>
+          <div class="ex-arrow">→</div>
+          <div class="ex-step"><div class="ex-label">Personal</div><div class="ex-val" id="exPersonal" style="color:var(--teal)">—</div><div class="ex-sub" id="exPubSub">PUB</div></div>
+          <div class="ex-arrow">→</div>
+          <div class="ex-step"><div class="ex-label">Adjusted</div><div class="ex-val" id="exPub" style="color:var(--teal)">—</div><div class="ex-sub">after PUB</div></div>
+          <div class="ex-arrow">→</div>
+          <div class="ex-step"><div class="ex-label">Personality</div><div class="ex-val" id="exPsych" style="color:var(--purple)">—</div><div class="ex-sub">OCEAN</div></div>
+          <div class="ex-arrow">→</div>
+          <div class="ex-step"><div class="ex-label">Final PERS</div><div class="ex-val" id="exFinal" style="font-size:20px;">—</div><div class="ex-sub" id="exSev" style="font-weight:600">—</div></div>
+        </div>
+      </div>
+      <div style="padding:10px 14px;border-top:1px solid var(--border);">
+        <div style="font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Behaviour Breakdown</div>
+        <div class="beh-row">
+          <div class="beh-seg" id="behNormal" style="background:var(--green);width:0%"></div>
+          <div class="beh-seg" id="behSusp"   style="background:var(--blue);width:0%"></div>
+          <div class="beh-seg" id="behHigh"   style="background:var(--amber);width:0%"></div>
+          <div class="beh-seg" id="behCrit"   style="background:var(--red);width:0%"></div>
+        </div>
+        <div class="beh-legend">
+          <span><span class="beh-dot" style="background:var(--green)"></span>Normal <span id="pctNormal" style="color:var(--text)">0%</span></span>
+          <span><span class="beh-dot" style="background:var(--blue)"></span>Suspicious <span id="pctSusp" style="color:var(--text)">0%</span></span>
+          <span><span class="beh-dot" style="background:var(--amber)"></span>High Risk <span id="pctHigh" style="color:var(--text)">0%</span></span>
+          <span><span class="beh-dot" style="background:var(--red)"></span>Critical <span id="pctCrit" style="color:var(--text)">0%</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel-full" style="padding:0;">
+      <div class="panel-head">
+        <span class="panel-title">Detection Timeline</span>
+        <div class="tl-legend">
+          <span><span class="tl-line" style="background:var(--green)"></span>Normal</span>
+          <span><span class="tl-line" style="background:var(--blue)"></span>Suspicious</span>
+          <span><span class="tl-line" style="background:var(--amber)"></span>High Risk</span>
+          <span><span class="tl-line" style="background:var(--red)"></span>Critical</span>
+        </div>
+      </div>
+      <div style="padding:10px 14px 14px;height:100px;position:relative;"><canvas id="timelineCanvas"></canvas></div>
+    </div>
+
+    <div class="panel panel-full">
+      <div class="panel-head">
+        <span class="panel-title">Detection Log</span>
+        <span class="panel-count" id="logCount">0 entries</span>
+      </div>
+      <div class="click-hint">💡 Click any row to see a full breakdown of how the risk score was calculated</div>
+      <div style="overflow-x:auto;">
+        <table class="log-table">
+          <thead><tr>
+            <th>Time</th><th>Employee ID</th><th>Department</th><th>Activity</th>
+            <th>Risk Level</th>
+            <th style="color:var(--muted)">Global Score</th>
+            <th style="color:var(--teal)">Personal Score</th>
+            <th style="color:var(--purple)">Final Score</th>
+            <th style="color:var(--purple)">Personality Effect</th>
+            <th>Reason Flagged</th>
+          </tr></thead>
+          <tbody id="logBody">
+            <tr><td colspan="10" style="text-align:center;padding:20px;color:var(--dim);">No events yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel panel-full" id="validationPanel" style="display:none;">
+      <div class="panel-head">
+        <span class="panel-title">Accuracy Validation — CERT Insider Threat Dataset R4.2</span>
+        <button class="btn red-btn" onclick="document.getElementById('validationPanel').style.display='none'" style="font-size:9px;padding:2px 7px;">close</button>
+      </div>
+      <div id="validationBody" style="padding:14px;"></div>
+    </div>
+
+  </div>
+
+  <div class="statusbar">
+    <span id="sbConn" style="color:var(--muted)">● disconnected</span>
+    <span>Events: <span id="sbEvents">0</span></span>
+    <span>Last: <span id="sbLast">—</span></span>
+    <span style="color:var(--teal)" id="sbPub">PUB: 0 trained</span>
+    <span style="color:var(--purple)" id="sbPers">PERS: loading…</span>
+    <span id="sbUser" style="color:var(--green)"></span>
+    <span style="margin-left:auto;">Pipeline: Data Collection → IF+LOF+UEBA → PUB → PERS</span>
+  </div>
+</div>
+
+<!-- ══════════════════ RISK DETAIL MODAL ══════════════════ -->
+<div class="modal-overlay" id="riskModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Risk Score Breakdown</div>
+      <button class="modal-close" onclick="closeModal()">✕ close</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+
+// ── CREDENTIALS ────────────────────────────────────────────────────────────
+const USERS_DB = {
+  "admin":    "insightguard2024",
+  "security": "analyst123",
+  "emily":    "password123",
+};
+
+function doLogin(){
+  const u=document.getElementById('loginUser').value.trim();
+  const p=document.getElementById('loginPass').value.trim();
+  const err=document.getElementById('loginError');
+  if(USERS_DB[u] && USERS_DB[u]===p){
+    document.getElementById('loginPage').style.display='none';
+    document.getElementById('mainApp').style.display='flex';
+    document.getElementById('sbUser').textContent='Logged in as: '+u;
+    sessionStorage.setItem('ig_user', u);
+    reconnect();
+  } else {
+    err.style.display='block';
+    document.getElementById('loginPass').classList.add('error');
+    setTimeout(()=>{document.getElementById('loginPass').classList.remove('error');},1000);
+  }
+}
+
+function doLogout(){
+  sessionStorage.removeItem('ig_user');
+  document.getElementById('mainApp').style.display='none';
+  document.getElementById('loginPage').style.display='flex';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('loginError').style.display='none';
+  if(es){es.close();es=null;}
+  clearAll();
+}
+
+// Check if already logged in
+window.onload=function(){
+  document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPass').focus();});
+  const saved=sessionStorage.getItem('ig_user');
+  if(saved && USERS_DB[saved]){
+    document.getElementById('loginPage').style.display='none';
+    document.getElementById('mainApp').style.display='flex';
+    document.getElementById('sbUser').textContent='Logged in as: '+saved;
+    reconnect();
+  }
+};
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let es=null,autoSimTimer=null,simRunning=false;
+let totalEvents=0,totalNormal=0,totalThreats=0,sseCount=0;
+let counts={normal:0,suspicious:0,high_risk:0,critical:0};
+let userProfiles={},alertItems=[],logEntries=[],logData=[],activeFilter='all';
+let persBoostTotal=0,persBoostCount=0;
+
+// ── CHART ──────────────────────────────────────────────────────────────────
+const N=40;let chart;
+function initChart(){
+  const ctx=document.getElementById('timelineCanvas').getContext('2d');
+  chart=new Chart(ctx,{type:'line',data:{labels:Array(N).fill(''),datasets:[
+    {data:Array(N).fill(0),borderColor:'#10b981',backgroundColor:'rgba(16,185,129,0.05)',borderWidth:1.5,tension:0.4,fill:true,pointRadius:0},
+    {data:Array(N).fill(0),borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.05)',borderWidth:1.5,tension:0.4,fill:true,pointRadius:0},
+    {data:Array(N).fill(0),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.05)',borderWidth:1.5,tension:0.4,fill:true,pointRadius:0},
+    {data:Array(N).fill(0),borderColor:'#f43f5e',backgroundColor:'rgba(244,63,94,0.05)',borderWidth:1.5,tension:0.4,fill:true,pointRadius:0},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  scales:{x:{display:false},y:{min:0,border:{display:false},ticks:{color:'#394152',font:{family:'IBM Plex Mono',size:9}},grid:{color:'#1e2530'}}},
+  animation:{duration:200}}});
+}
+function pushChart(sev){
+  chart.data.datasets.forEach(d=>{d.data.shift();d.data.push(0);});
+  chart.data.labels.shift();chart.data.labels.push('');
+  const idx={normal:0,suspicious:1,high_risk:2,critical:3}[sev]??0;
+  chart.data.datasets[idx].data[N-1]=1;chart.update('none');
+}
+
+// ── CONNECTION ─────────────────────────────────────────────────────────────
+function getBase(){return document.getElementById('apiUrl').value.replace(/\/$/,'');}
+function setConn(s){
+  const dot=document.getElementById('connDot'),lbl=document.getElementById('connLabel'),sb=document.getElementById('sbConn');
+  dot.className='conn-dot '+s;
+  if(s==='live'){lbl.textContent='live';lbl.style.color='var(--green)';sb.textContent='● connected';sb.style.color='var(--green)';}
+  else if(s==='connecting'){lbl.textContent='connecting…';lbl.style.color='var(--amber)';sb.textContent='● connecting';sb.style.color='var(--amber)';}
+  else{lbl.textContent='offline';lbl.style.color='var(--red)';sb.textContent='● disconnected';sb.style.color='var(--red)';}
+}
+function reconnect(){
+  if(es){es.close();es=null;}
+  setConn('connecting');
+  try{
+    es=new EventSource(getBase()+'/api/stream');
+    es.onopen=()=>setConn('live');
+    es.onerror=()=>setConn('offline');
+    es.onmessage=e=>handleSSE(e.data);
+  }catch{setConn('offline');}
+}
+function handleSSE(raw){
+  let d;try{d=JSON.parse(raw);}catch{return;}
+  if(d.type==='init'){
+    setConn('live');
+    if(d.psych_profiles){
+      document.getElementById('persProfileCount').textContent=d.psych_profiles+' personality profiles loaded';
+      document.getElementById('sbPers').textContent='PERS: '+d.psych_profiles+' profiles';
+    }
+    if(d.pub_trained!==undefined){
+      document.getElementById('pubStatusBanner').textContent=d.pub_trained+' / '+(d.pub_users||0)+' trained';
+      document.getElementById('sbPub').textContent='PUB: '+d.pub_trained+' trained';
+    }
+    return;
+  }
+  sseCount++;
+  document.getElementById('sbEvents').textContent=sseCount;
+  document.getElementById('sbLast').textContent=new Date().toLocaleTimeString();
+  ingestEvent(d);
+}
+
+// ── INGEST ─────────────────────────────────────────────────────────────────
+function ingestEvent(d){
+  const sev=d.severity||'normal';
+  totalEvents++;counts[sev]=(counts[sev]||0)+1;
+  if(sev==='normal')totalNormal++;else totalThreats++;
+  const boost=d.pers_enhancement||0;
+  if(boost!==0){persBoostTotal+=boost;persBoostCount++;}
+  const avg=persBoostCount>0?Math.round(persBoostTotal/persBoostCount):0;
+  document.getElementById('mPersBoost').textContent=(avg>=0?'+':'')+avg;
+  flashMetric('mEvents',totalEvents,'green');
+  flashMetric('mNormal',totalNormal,'blue');
+  if(sev!=='normal')flashMetric('mThreats',totalThreats,'red');
+  pushChart(sev);updateBreakdown();
+  addFeedItem(d);addLogRow(d);updateProfile(d);updateExplain(d);fetchStats();
+}
+
+function updateExplain(d){
+  if(d.ml_score===undefined)return;
+  document.getElementById('explainCard').style.display='block';
+  document.getElementById('exML').textContent=d.ml_score??'—';
+  document.getElementById('exPersonal').textContent=(d.personal_risk_score??'—')+(d.pub_is_trained?' ✓':'');
+  document.getElementById('exPubSub').textContent=d.pub_is_trained?'personal':'global';
+  document.getElementById('exPub').textContent=d.pub_combined??'—';
+  document.getElementById('exPsych').textContent=(d.psychometric_risk||0).toFixed(0);
+  const fs=document.getElementById('exFinal'),sv=document.getElementById('exSev');
+  fs.textContent=d.risk_score??'—';fs.style.color=scoreColor(d.risk_score);
+  sv.textContent=(d.severity||'').replace('_',' ').toUpperCase();sv.style.color=scoreColor(d.risk_score);
+}
+
+function updateBreakdown(){
+  const t=totalEvents||1;
+  [['normal','behNormal','pctNormal'],['suspicious','behSusp','pctSusp'],
+   ['high_risk','behHigh','pctHigh'],['critical','behCrit','pctCrit']].forEach(([k,b,p])=>{
+    const pct=Math.round(counts[k]/t*100);
+    document.getElementById(b).style.width=pct+'%';
+    document.getElementById(p).textContent=pct+'%';
+  });
+}
+
+const SEV_ICON={critical:'☠',high_risk:'⚠',suspicious:'◈',normal:'✓'};
+const SEV_LABEL={critical:'CRITICAL THREAT',high_risk:'HIGH RISK',suspicious:'SUSPICIOUS',normal:'NORMAL'};
+
+function addFeedItem(d){
+  const feed=document.getElementById('alertFeed');
+  if(feed.querySelector('.empty'))feed.innerHTML='';
+  const sev=d.severity||'normal';
+  const rules=sev==='normal'?'Normal behaviour — no suspicious patterns':(d.triggered_rules||[]).slice(0,2).join(', ')||'Anomaly detected';
+  const boost=d.pers_enhancement||0;
+  const el=document.createElement('div');
+  el.className='alert-item '+sev+' new-alert';el.dataset.sev=sev;
+  if(activeFilter!=='all'&&activeFilter!==sev)el.classList.add('hidden');
+  el.innerHTML=`<div class="alert-icon">${SEV_ICON[sev]}</div>
+    <div class="alert-body">
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span class="alert-user">${d.user_id||'?'}</span>
+        <span style="font-size:10px;color:var(--muted)">${d.department||''}</span>
+      </div>
+      <div class="alert-desc">${(d.activity_type||'?').replace(/_/g,' ').toUpperCase()} — ${rules}</div>
+      <div class="alert-meta">
+        <span class="badge ${sev}">${SEV_LABEL[sev]||sev}</span>
+        ${boost!==0?`<span class="mini-tag pers-tag">Personality: ${boost>=0?'+':''}${boost}</span>`:''}
+        ${d.pub_is_trained?'<span class="mini-tag pub-tag">Personal Model ✓</span>':''}
+        <span class="alert-time">${new Date(d.timestamp||Date.now()).toLocaleTimeString()}</span>
+      </div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div class="alert-score" style="color:${scoreColor(d.risk_score)}">${d.risk_score??0}</div>
+      <div style="font-size:8px;color:var(--muted);font-family:var(--mono)">risk score</div>
+    </div>`;
+  feed.insertBefore(el,feed.firstChild);
+  alertItems.unshift(el);
+  if(alertItems.length>60){const old=alertItems.pop();if(old.parentNode)old.parentNode.removeChild(old);}
+  document.getElementById('alertCount').textContent=alertItems.filter(i=>!i.classList.contains('hidden')).length+' events';
+}
+
+function scoreColor(s){return s>=80?'var(--red)':s>=60?'var(--amber)':s>=35?'var(--blue)':'var(--green)';}
+
+function setFilter(f){
+  activeFilter=f;
+  document.querySelectorAll('.ftab').forEach(t=>{
+    t.classList.toggle('active',t.classList.contains(f)||(f==='all'&&t.classList.contains('all')));
+  });
+  let v=0;
+  alertItems.forEach(el=>{const m=f==='all'||el.dataset.sev===f;el.classList.toggle('hidden',!m);if(m)v++;});
+  document.getElementById('alertCount').textContent=v+' events';
+}
+
+// ── LOG TABLE + CLICK DETAIL ───────────────────────────────────────────────
+function addLogRow(d){
+  const body=document.getElementById('logBody');
+  if(body.rows[0]?.cells.length===1)body.innerHTML='';
+  const sev=d.severity||'normal';
+  const boost=d.pers_enhancement||0;
+  const rules=sev==='normal'?'— No rules triggered':
+    (d.triggered_rules||[]).slice(0,2).map(r=>r.replace(/_/g,' ')).join(', ')||'—';
+  const tr=document.createElement('tr');
+  tr.className='new-row clickable';
+  tr.title='Click to see full risk score breakdown';
+  tr.innerHTML=`
+    <td style="font-family:var(--mono);font-size:10px;color:var(--muted)">${new Date(d.timestamp||Date.now()).toLocaleTimeString()}</td>
+    <td style="font-family:var(--mono);font-size:11px;font-weight:600">${d.user_id||'?'}</td>
+    <td style="font-size:10px;color:var(--muted)">${d.department||'—'}</td>
+    <td style="font-size:10px">${(d.activity_type||'?').replace(/_/g,' ')}</td>
+    <td><span class="sev-pill ${sev}">${SEV_ICON[sev]} ${sev.replace('_',' ')}</span></td>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${d.ml_score??'—'}</td>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--teal);font-weight:500">${d.personal_risk_score??'—'}${d.pub_is_trained?' ✓':''}</td>
+    <td style="font-family:var(--mono);font-size:12px;font-weight:700;color:${scoreColor(d.risk_score)}">${d.risk_score??'—'}</td>
+    <td style="font-family:var(--mono);font-size:11px;color:${boost>0?'var(--red)':boost<0?'var(--green)':'var(--dim)'}">${boost>0?'+':''}${boost}</td>
+    <td style="font-size:10px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rules}</td>`;
+  tr.addEventListener('click',()=>showRiskDetail(d));
+  body.insertBefore(tr,body.firstChild);
+  logEntries.unshift(tr);
+  logData.unshift(d);
+  if(logEntries.length>50){logEntries.pop();logData.pop();}
+  if(logEntries.length>0&&body.lastChild&&logEntries.length>50)body.removeChild(body.lastChild);
+  document.getElementById('logCount').textContent=logEntries.length+' entries';
+}
+
+// ── RISK DETAIL MODAL ──────────────────────────────────────────────────────
+function showRiskDetail(d){
+  const sev=d.severity||'normal';
+  const sevColor=scoreColor(d.risk_score);
+  const ml=d.ml_score||0;
+  const personal=d.personal_risk_score||0;
+  const pub=d.pub_combined||ml;
+  const psych=(d.psychometric_risk||0).toFixed(1);
+  const final=d.risk_score||0;
+  const boost=d.pers_enhancement||0;
+  const rules=d.triggered_rules||[];
+  const pubTrained=d.pub_is_trained;
+
+  document.getElementById('modalTitle').innerHTML=
+    `Risk Score Breakdown — <span style="font-family:var(--mono);color:var(--blue)">${d.user_id||'?'}</span>
+     <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px">${d.department||''} · ${(d.activity_type||'').replace(/_/g,' ')} · ${new Date(d.timestamp||Date.now()).toLocaleTimeString()}</span>`;
+
+  // All 16 possible UEBA rules
+  const ALL_RULES=[
+    {key:'off_hours_login',label:'Off-hours login',weight:12,desc:'Login outside 8am–6pm'},
+    {key:'high_risk_country',label:'High-risk country',weight:25,desc:'Login from KP, IR, RU, BY, CN'},
+    {key:'unknown_country',label:'Unknown country',weight:10,desc:'Login from unrecognised country'},
+    {key:'tor_detected',label:'TOR network usage',weight:30,desc:'Traffic routed through TOR'},
+    {key:'vpn_suspicious',label:'VPN outside hours',weight:6,desc:'VPN used outside business hours'},
+    {key:'new_device',label:'New device',weight:8,desc:'Login from unrecognised device'},
+    {key:'repeated_auth_fail',label:'Failed authentication',weight:12,desc:'3+ failed login attempts'},
+    {key:'bulk_download',label:'Bulk download',weight:18,desc:'Over 500MB transferred'},
+    {key:'massive_download',label:'Massive download',weight:32,desc:'Over 2000MB transferred'},
+    {key:'bulk_file_access',label:'Bulk file access',weight:16,desc:'Over 50 files accessed'},
+    {key:'extreme_file_access',label:'Extreme file access',weight:26,desc:'Over 200 files accessed'},
+    {key:'usb_exfil',label:'USB exfiltration',weight:20,desc:'USB transfer over 100MB'},
+    {key:'external_email_bulk',label:'External bulk email',weight:14,desc:'Email to 5+ external recipients'},
+    {key:'risky_web',label:'Risky website',weight:10,desc:'Cloud storage or file sharing visited'},
+    {key:'large_attachment',label:'Large attachment',weight:12,desc:'Email attachment over 50MB'},
+  ];
+
+  const triggeredSet=new Set(rules);
+
+  document.getElementById('modalBody').innerHTML=`
+
+    <!-- Score flow -->
+    <div class="score-flow">
+      <div class="sf-step">
+        <div class="sf-step-icon">🌍</div>
+        <div class="sf-step-label">Step 1 · Global ML Score</div>
+        <div class="sf-step-val" style="color:var(--muted)">${ml}</div>
+        <div class="sf-step-desc">Isolation Forest + LOF + UEBA<br>compared to ALL users baseline</div>
+      </div>
+      <div class="sf-arrow-col">→</div>
+      <div class="sf-step">
+        <div class="sf-step-icon">👤</div>
+        <div class="sf-step-label">Step 2 · Personal Baseline (PUB)</div>
+        <div class="sf-step-val" style="color:var(--teal)">${personal}${pubTrained?' ✓':''}</div>
+        <div class="sf-step-desc">${pubTrained?'Personal Isolation Forest<br>compared to THIS user\'s history':'Still learning — using global<br>baseline for now (need 10+ events)'}</div>
+      </div>
+      <div class="sf-arrow-col">→</div>
+      <div class="sf-step">
+        <div class="sf-step-icon">⚖️</div>
+        <div class="sf-step-label">Step 3 · Combined (PUB)</div>
+        <div class="sf-step-val" style="color:var(--teal)">${pub}</div>
+        <div class="sf-step-desc">Global × 40% + Personal × 60%<br>= ${(ml*0.4).toFixed(0)} + ${(personal*0.6).toFixed(0)} = ${pub}</div>
+      </div>
+      <div class="sf-arrow-col">→</div>
+      <div class="sf-step">
+        <div class="sf-step-icon">🧠</div>
+        <div class="sf-step-label">Step 4 · Personality Risk (PERS)</div>
+        <div class="sf-step-val" style="color:var(--purple)">${psych}</div>
+        <div class="sf-step-desc">OCEAN C, A, N personality score<br>${boost>=0?'Raised':'Lowered'} final score by ${Math.abs(boost)} points</div>
+      </div>
+      <div class="sf-arrow-col">→</div>
+      <div class="sf-step" style="background:${sev==='normal'?'rgba(16,185,129,0.08)':sev==='suspicious'?'rgba(59,130,246,0.08)':sev==='high_risk'?'rgba(245,158,11,0.08)':'rgba(244,63,94,0.08)'}">
+        <div class="sf-step-icon">${SEV_ICON[sev]}</div>
+        <div class="sf-step-label">Final Risk Score</div>
+        <div class="sf-step-val" style="font-size:32px;color:${sevColor}">${final}</div>
+        <div class="sf-step-desc" style="color:${sevColor};font-weight:600">${sev.replace('_',' ').toUpperCase()}</div>
+      </div>
+    </div>
+
+    <!-- PERS formula -->
+    <div class="detail-section">
+      <div class="detail-section-title">PERS Formula Calculation</div>
+      <div style="background:var(--card);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;border:1px solid var(--border);">
+        <div style="margin-bottom:6px;color:var(--muted)">PERS = (PUB Combined × 0.70) + (Personality Risk × 0.30)</div>
+        <div style="margin-bottom:6px">PERS = (${pub} × 0.70) + (${psych} × 0.30)</div>
+        <div style="margin-bottom:6px">PERS = ${(pub*0.70).toFixed(1)} + ${(+psych*0.30).toFixed(1)}</div>
+        <div style="color:${sevColor};font-weight:600;font-size:14px">PERS = ${final} → ${sev.replace('_',' ').toUpperCase()}</div>
+      </div>
+    </div>
+
+    <!-- Score comparison bars -->
+    <div class="detail-section">
+      <div class="detail-section-title">Score Comparison</div>
+      ${[
+        {label:'Global ML Score (all users baseline)',val:ml,color:'var(--muted)',desc:'If we only used the global model'},
+        {label:'Personal Score (this user\'s baseline)',val:personal,color:'var(--teal)',desc:pubTrained?'Based on this user\'s own activity history':'Not yet trained — need more events'},
+        {label:'PUB Combined Score',val:pub,color:'var(--teal)',desc:'Global × 40% + Personal × 60%'},
+        {label:'Personality Risk (OCEAN)',val:+psych,color:'var(--purple)',desc:'Derived from C, A, N personality traits'},
+        {label:'Final PERS Score',val:final,color:sevColor,desc:'The definitive risk assessment'},
+      ].map(s=>`
+        <div class="detail-bar-row">
+          <div class="detail-bar-header">
+            <span class="detail-bar-label">${s.label}</span>
+            <span class="detail-bar-val" style="color:${s.color}">${s.val.toFixed ? s.val.toFixed(0) : s.val}</span>
+          </div>
+          <div class="detail-bar"><div class="detail-bar-fill" style="width:${Math.min(s.val,100)}%;background:${s.color}"></div></div>
+          <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-top:2px">${s.desc}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- UEBA Rules -->
+    <div class="detail-section">
+      <div class="detail-section-title">UEBA Rule Engine — ${rules.length} rule${rules.length!==1?'s':''} triggered</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">
+        ${ALL_RULES.map(r=>`
+          <div class="rule-tag ${triggeredSet.has(r.key)?'triggered':'not-triggered'}" title="${r.desc}">
+            ${triggeredSet.has(r.key)?'⚠ ':''}${r.label} <span style="opacity:0.6">(+${r.weight})</span>
+          </div>`).join('')}
+      </div>
+      ${rules.length>0?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono);">Total UEBA score: ${d.ueba_score||0} points</div>`:'<div style="font-size:11px;color:var(--green);font-family:var(--mono);">✓ No UEBA rules triggered — behaviour appears normal</div>'}
+    </div>
+
+    <!-- Personality (OCEAN) -->
+    ${d.psychometric_risk!==undefined?`
+    <div class="detail-section">
+      <div class="detail-section-title">Personality Profile (OCEAN Big Five)</div>
+      <div style="background:var(--card);border-radius:8px;padding:14px;border:1px solid var(--border);margin-bottom:10px;">
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">
+          Personality Risk Formula: (100−C)×0.35 + (100−A)×0.35 + N×0.30 = ${psych}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          ${[
+            {key:'C',name:'Conscientiousness',val:null,inv:true,weight:'35%',desc:'Low C = careless, rule-breaking tendency → HIGH RISK'},
+            {key:'A',name:'Agreeableness',val:null,inv:true,weight:'35%',desc:'Low A = hostile, revenge-motivated → HIGH RISK'},
+            {key:'N',name:'Neuroticism',val:null,inv:false,weight:'30%',desc:'High N = stress, poor decisions under pressure → HIGH RISK'},
+          ].map(t=>`
+            <div class="ocean-item">
+              <div class="ocean-label">${t.key} (weight ${t.weight})</div>
+              <div class="ocean-name">${t.name}</div>
+              <div style="font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:6px">${t.desc}</div>
+              <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">Score from psychometric.csv</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">
+        Final personality risk score for this user: <span style="color:var(--purple);font-weight:600">${psych}</span>
+        — ${+psych>=70?'HIGH personality risk':''+psych>=50?'MEDIUM personality risk':'LOW personality risk'}
+      </div>
+    </div>`:''}
+
+    <!-- PUB status -->
+    <div class="detail-section">
+      <div class="detail-section-title">Personal Baseline Status (PUB)</div>
+      <div style="background:var(--card);border-radius:8px;padding:14px;border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span style="font-size:20px;">${pubTrained?'✓':'⏳'}</span>
+          <div>
+            <div style="font-size:12px;font-weight:500;color:${pubTrained?'var(--teal)':'var(--muted)'}">${pubTrained?'Personal baseline trained and active':'Personal baseline still learning'}</div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:2px">${d.pub_status||'—'}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);">
+          ${pubTrained
+            ?`This user's personal Isolation Forest model has been trained on their own activity history. 
+               Events are scored against <strong style="color:var(--teal)">their personal normal</strong> — 
+               not the global average. This reduces false positives for users with unusual but consistent patterns.`
+            :`The system needs at least 10 events from this user to build their personal baseline. 
+               Until then, the global model is used. Once trained, weekend activity, off-hours logins, 
+               and other patterns that are normal for this user will score lower.`}
+        </div>
+      </div>
+    </div>
+
+    <!-- What this means -->
+    <div class="detail-section">
+      <div class="detail-section-title">What This Means</div>
+      <div style="background:${sev==='normal'?'rgba(16,185,129,0.06)':sev==='suspicious'?'rgba(59,130,246,0.06)':sev==='high_risk'?'rgba(245,158,11,0.06)':'rgba(244,63,94,0.08)'};border-radius:8px;padding:14px;border-left:3px solid ${sevColor};">
+        <div style="font-size:13px;font-weight:600;color:${sevColor};margin-bottom:6px;">${SEV_ICON[sev]} ${sev.replace('_',' ').toUpperCase()} — Risk Score: ${final}/100</div>
+        <div style="font-size:12px;color:var(--muted);">
+          ${sev==='normal'?`This employee's activity appears completely normal. The risk score of ${final} is well below the suspicious threshold of 35. No investigation is required.`
+          :sev==='suspicious'?`This activity is worth monitoring. The risk score of ${final} (threshold: 35) suggests some unusual behaviour patterns but does not indicate an immediate threat. Recommend passive monitoring.`
+          :sev==='high_risk'?`This activity requires prompt investigation. The risk score of ${final} indicates significant deviations from normal behaviour. A security analyst should review this employee's recent activity.`
+          :`IMMEDIATE ACTION REQUIRED. Risk score ${final} indicates behaviour consistent with a serious insider threat. Multiple high-weight threat indicators have been triggered simultaneously.`}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('riskModal').classList.add('open');
+}
+
+function closeModal(){
+  document.getElementById('riskModal').classList.remove('open');
+}
+// Close on overlay click
+document.getElementById('riskModal').addEventListener('click',function(e){
+  if(e.target===this)closeModal();
+});
+// Close on Escape
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// ── RISK BARS ──────────────────────────────────────────────────────────────
+function renderRiskBars(profiles){
+  const c=document.getElementById('riskBars');
+  if(!profiles.length){c.innerHTML='<div class="empty">No employees monitored yet</div>';return;}
+  c.innerHTML='';
+  profiles.slice(0,8).forEach(p=>{
+    const s=p.rolling_score||0;
+    const ps=p.psychometric_risk||0;
+    const pubSeen=p.pub_events_seen||0;
+    const pubTrained=p.pub_status&&p.pub_status.startsWith('trained');
+    const col=s>=80?'var(--red)':s>=60?'var(--amber)':s>=35?'var(--blue)':'var(--green)';
+    const div=document.createElement('div');div.className='risk-row';
+    div.innerHTML=`
+      <div class="risk-header">
+        <div><span class="risk-name">${p.user_id}</span><span class="risk-dept">${p.department||''}</span></div>
+        <div class="risk-right">
+          <span class="pub-pill ${pubTrained?'trained':'learning'}">${pubTrained?'✓ Personal Model':'Learning '+pubSeen+'/10'}</span>
+          <span class="risk-score-n" style="color:${col}">${s}</span>
+        </div>
+      </div>
+      <div class="risk-track"><div class="risk-fill" style="width:${s}%;background:${col}"></div></div>
+      <div class="sub-tracks">
+        <div class="sub-t" title="Personal baseline training progress"><div class="sub-teal" style="width:${Math.min(pubSeen*10,100)}%"></div></div>
+        ${ps>0?`<div class="sub-t" title="Personality risk ${ps.toFixed(0)}"><div class="sub-purple" style="width:${ps}%"></div></div>`:''}
+      </div>`;
+    c.appendChild(div);
+  });
+}
+
+function updateProfile(d){
+  if(!d.user_id)return;
+  if(!userProfiles[d.user_id])userProfiles[d.user_id]={
+    rolling_score:0,department:d.department||'',user_id:d.user_id,
+    psychometric_risk:d.psychometric_risk||0,pub_status:'learning',pub_events_seen:0
+  };
+  const p=userProfiles[d.user_id];
+  p.rolling_score=Math.round(0.3*(d.risk_score||0)+0.7*p.rolling_score);
+  if(d.psychometric_risk)p.psychometric_risk=d.psychometric_risk;
+  if(d.pub_status)p.pub_status=d.pub_status;
+  if(d.pub_events_seen!==undefined)p.pub_events_seen=d.pub_events_seen;
+  renderRiskBars(Object.values(userProfiles).sort((a,b)=>b.rolling_score-a.rolling_score));
+  document.getElementById('mUsers').textContent=Object.keys(userProfiles).length;
+}
+
+async function fetchStats(){
+  try{
+    const r=await fetch(getBase()+'/api/stats');if(!r.ok)return;
+    const s=await r.json();
+    document.getElementById('mUsers').textContent=s.active_users||0;
+    if(s.pub_trained_users!==undefined){
+      document.getElementById('mPubTrained').textContent=s.pub_trained_users||0;
+      document.getElementById('pubStatusBanner').textContent=(s.pub_trained_users||0)+' / '+(s.pub_total_users||0)+' trained';
+      document.getElementById('sbPub').textContent='PUB: '+(s.pub_trained_users||0)+' trained';
+    }
+    if(s.user_risk_profiles)renderRiskBars(s.user_risk_profiles);
+  }catch{}
+}
+
+async function runValidation(){
+  const panel=document.getElementById('validationPanel');
+  const body=document.getElementById('validationBody');
+  panel.style.display='block';
+  body.innerHTML='<p style="color:var(--muted);font-family:var(--mono);font-size:11px;">Validating against CERT ground truth…</p>';
+  try{
+    const r=await fetch(getBase()+'/api/validate');const d=await r.json();
+    if(d.error){body.innerHTML=`<p style="color:var(--red)">${d.error}</p>`;return;}
+    body.innerHTML=`
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;font-family:var(--sans);">Results compared against CERT Insider Threat Dataset r4.2 ground truth — ${d.monitored_insiders||0} known insider threat users present in monitored dataset.</p>
+      <div class="val-grid">
+        <div class="val-card"><div class="val-label">Precision</div><div class="val-val" style="color:var(--green)">${((d.precision||0)*100).toFixed(1)}%</div><div class="val-desc">Of all users flagged, this % were real threats</div></div>
+        <div class="val-card"><div class="val-label">Recall</div><div class="val-val" style="color:var(--blue)">${((d.recall||0)*100).toFixed(1)}%</div><div class="val-desc">Of all real threats, this % were caught</div></div>
+        <div class="val-card"><div class="val-label">F1 Score</div><div class="val-val" style="color:var(--amber)">${(d.f1_score||0).toFixed(3)}</div><div class="val-desc">Balance between precision and recall</div></div>
+        <div class="val-card"><div class="val-label">Accuracy</div><div class="val-val">${((d.accuracy||0)*100).toFixed(1)}%</div><div class="val-desc">Overall correct classifications</div></div>
+      </div>
+      <div class="cm-grid">
+        <div class="cm-card" style="background:rgba(16,185,129,0.1)"><div class="cm-label" style="color:var(--green)">True Positives</div><div class="cm-val" style="color:var(--green)">${d.TP||0}</div><div class="cm-desc" style="color:var(--green)">Real threats correctly caught</div></div>
+        <div class="cm-card" style="background:rgba(244,63,94,0.1)"><div class="cm-label" style="color:var(--red)">False Positives</div><div class="cm-val" style="color:var(--red)">${d.FP||0}</div><div class="cm-desc" style="color:var(--red)">Innocent users wrongly flagged</div></div>
+        <div class="cm-card" style="background:rgba(245,158,11,0.1)"><div class="cm-label" style="color:var(--amber)">False Negatives</div><div class="cm-val" style="color:var(--amber)">${d.FN||0}</div><div class="cm-desc" style="color:var(--amber)">Real threats that were missed</div></div>
+        <div class="cm-card" style="background:rgba(59,130,246,0.1)"><div class="cm-label" style="color:var(--blue)">True Negatives</div><div class="cm-val" style="color:var(--blue)">${d.TN||0}</div><div class="cm-desc" style="color:var(--blue)">Innocent users correctly cleared</div></div>
+      </div>
+      ${d.detected_insiders?.length?`<p style="font-size:10px;color:var(--green);font-family:var(--mono);margin-bottom:3px">✓ Detected: ${d.detected_insiders.slice(0,10).join(', ')}${d.detected_insiders.length>10?' and '+(d.detected_insiders.length-10)+' more':''}</p>`:''}
+      ${d.missed_insiders?.length?`<p style="font-size:10px;color:var(--amber);font-family:var(--mono)">✗ Missed: ${d.missed_insiders.slice(0,8).join(', ')}${d.missed_insiders.length>8?' and '+(d.missed_insiders.length-8)+' more':''}</p>`:''}`;
+  }catch(e){body.innerHTML=`<p style="color:var(--red)">Error: ${e.message}</p>`;}
+}
+
+async function triggerSimulate(type='random'){
+  try{
+    const r=await fetch(`${getBase()}/api/events/simulate?type=${type}`);
+    if(r.ok){
+      const d=await r.json();
+      if(!es||es.readyState!==EventSource.OPEN)ingestEvent({...d,timestamp:d.timestamp||new Date().toISOString()});
+      document.getElementById('simStatus').textContent=`Global ${d.ml_score} → Personal ${d.pub_combined} → Final ${d.risk_score} [${(d.severity||'').replace('_',' ')}]`;
+    }else fallbackLocalSim(type);
+  }catch{fallbackLocalSim(type);}
+}
+
+const _USERS=[['jsmith','Finance'],['alopez','Engineering'],['mkumar','HR'],['twang','IT'],['rbrown','Legal'],['hnguyen','Finance']];
+const _TYPES=['login','file_access','email','usb','web'];
+const _RH=['tor_detected','high_risk_country','massive_download','bulk_file_access','usb_exfil'];
+const _RL=['off_hours_login','vpn_suspicious','risky_web','external_email_bulk'];
+
+function fallbackLocalSim(type='random'){
+  let sev;
+  if(type==='normal')sev='normal';
+  else if(type==='critical')sev=Math.random()<0.6?'critical':'high_risk';
+  else{const r=Math.random();sev=r<0.55?'normal':r<0.75?'suspicious':r<0.90?'high_risk':'critical';}
+  const ml=sev==='critical'?80+Math.floor(Math.random()*19):sev==='high_risk'?60+Math.floor(Math.random()*19):sev==='suspicious'?35+Math.floor(Math.random()*24):5+Math.floor(Math.random()*28);
+  const personal=Math.max(0,Math.min(100,ml+Math.floor((Math.random()-0.5)*30)));
+  const pub=Math.round(ml*0.4+personal*0.6);
+  const psych=Math.round(Math.random()*100);
+  const pers=Math.round(pub*0.7+psych*0.3);
+  const [uid,dept]=_USERS[Math.floor(Math.random()*_USERS.length)];
+  ingestEvent({
+    user_id:uid,department:dept,activity_type:_TYPES[Math.floor(Math.random()*_TYPES.length)],
+    severity:sev,risk_score:pers,ml_score:ml,personal_risk_score:personal,pub_combined:pub,
+    pub_is_trained:Math.random()>0.4,pub_events_seen:Math.floor(Math.random()*30),
+    pub_status:Math.random()>0.4?'trained (15 events)':'learning (5/10 events)',
+    psychometric_risk:psych,pers_enhancement:pers-ml,
+    ueba_score:sev==='normal'?0:Math.round(ml*0.85),
+    triggered_rules:sev==='normal'?[]:[_RH[Math.floor(Math.random()*_RH.length)],_RL[Math.floor(Math.random()*_RL.length)]],
+    timestamp:new Date().toISOString()
+  });
+}
+
+function toggleAutoSim(){
+  simRunning=!simRunning;
+  const btn=document.getElementById('simBtn');
+  if(simRunning){btn.textContent='⏸ pause';btn.style.borderColor='var(--amber)';btn.style.color='var(--amber)';runAutoSim();}
+  else{btn.textContent='▶ start';btn.style.borderColor='var(--green)';btn.style.color='var(--green)';clearTimeout(autoSimTimer);}
+}
+function runAutoSim(){
+  if(!simRunning)return;
+  triggerSimulate('random');
+  autoSimTimer=setTimeout(runAutoSim,parseInt(document.getElementById('speed').value));
+}
+
+function flashMetric(id,val,color){
+  const el=document.getElementById(id);el.textContent=val;
+  el.className='metric-val flash '+color;setTimeout(()=>el.classList.remove('flash'),400);
+}
+
+function clearAll(){
+  document.getElementById('alertFeed').innerHTML='<div class="empty">Feed cleared</div>';
+  document.getElementById('logBody').innerHTML='<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--dim);">Cleared</td></tr>';
+  alertItems=[];logEntries=[];logData=[];
+  document.getElementById('alertCount').textContent='0 events';
+  document.getElementById('logCount').textContent='0 entries';
+  totalEvents=0;totalNormal=0;totalThreats=0;
+  counts={normal:0,suspicious:0,high_risk:0,critical:0};
+  persBoostTotal=0;persBoostCount=0;
+  ['mEvents','mNormal','mThreats'].forEach(id=>document.getElementById(id).textContent='0');
+  document.getElementById('mPersBoost').textContent='+0';
+  document.getElementById('explainCard').style.display='none';
+  ['behNormal','behSusp','behHigh','behCrit'].forEach(id=>document.getElementById(id).style.width='0%');
+  ['pctNormal','pctSusp','pctHigh','pctCrit'].forEach(id=>document.getElementById(id).textContent='0%');
+}
+
+initChart();
+</script>
+</body>
+</html>
