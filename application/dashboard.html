@@ -328,7 +328,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
     </div>
     <div class="topbar-right">
       <div class="conn-badge"><div class="conn-dot connecting" id="connDot"></div><span id="connLabel" style="color:var(--muted)">connecting…</span></div>
-      <input class="api-input" id="apiUrl" value="https://insightguard.onrender.com">
+      <input class="api-input" id="apiUrl" value="http://localhost:5000">
       <button class="btn" onclick="reconnect()">connect</button>
       <button class="btn green-btn"  onclick="triggerSimulate('normal')">✓ normal</button>
       <button class="btn amber-btn"  onclick="triggerSimulate('random')">⚡ inject</button>
@@ -338,20 +338,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
     </div>
   </div>
 
-  <div class="banner-row">
-    <div class="banner purple-b">
-      <div class="b-dot"></div>
-      <span style="font-weight:600">Novel 1 — PERS</span>
-      <span class="b-desc">Psychometric-Enhanced Risk Scoring · PERS = (Personal Score × 70%) + (Personality Risk × 30%)</span>
-      <span class="b-stat" id="persProfileCount">loading…</span>
-    </div>
-    <div class="banner teal-b">
-      <div class="b-dot"></div>
-      <span style="font-weight:600">Novel 2 — PUB</span>
-      <span class="b-desc">Per-User Baseline · Personal Isolation Forest per employee</span>
-      <span class="b-stat" id="pubStatusBanner">0 / 0 trained</span>
-    </div>
-  </div>
+
 
   <div class="controls">
     <span class="clabel">auto-simulate:</span>
