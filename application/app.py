@@ -254,6 +254,13 @@ def _try_put(q, msg):
     except queue.Full: return False
 
 
+@app.get("/")
+@app.get("/dashboard")
+def serve_dashboard():
+    from flask import send_file
+    dashboard_path = Path(__file__).parent / "dashboard.html"
+    return send_file(str(dashboard_path))
+
 @app.get("/healthz")
 def health():
     pub = get_pub_store()
@@ -443,4 +450,16 @@ if __name__=="__main__":
     print("PERS psychometrics      →  GET /api/psychometrics")
     print("Per-User Baselines      →  GET /api/baselines")
     print("Ground truth validation →  GET /api/validate")
-    app.run(host="0.0.0.0",port=5000,debug=False,threaded=True)
+
+    # Auto-load data on startup (runs in background so server starts immediately)
+    import threading as _t
+    def _startup():
+        try:
+            from startup_loader import run_startup_loader
+            run_startup_loader()
+        except Exception as e:
+            print(f"[Startup] Warning: {e}")
+    _t.Thread(target=_startup, daemon=True).start()
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
