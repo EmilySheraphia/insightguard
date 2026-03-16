@@ -257,9 +257,20 @@ def _try_put(q, msg):
 @app.get("/")
 @app.get("/dashboard")
 def serve_dashboard():
-    from flask import send_file
-    dashboard_path = Path(__file__).parent / "dashboard.html"
-    return send_file(str(dashboard_path))
+    import os as _os
+    from flask import Response as _Resp
+    base = _os.path.dirname(_os.path.abspath(__file__))
+    paths = [
+        _os.path.join(base, "dashboard.html"),
+        _os.path.join(base, "..", "application", "dashboard.html"),
+        _os.path.join(_os.getcwd(), "application", "dashboard.html"),
+        _os.path.join(_os.getcwd(), "dashboard.html"),
+    ]
+    for p in paths:
+        if _os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return _Resp(f.read(), mimetype="text/html")
+    return _Resp("<h1>InsightGuard API running</h1><p>Visit <a href='/healthz'>/healthz</a></p>", mimetype="text/html")
 
 @app.get("/healthz")
 def health():
