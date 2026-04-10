@@ -27,8 +27,72 @@ from psychometric_scorer           import get_store as get_psych_store
 from per_user_baseline             import ingest_and_score as pub_score
 from per_user_baseline             import get_store as get_pub_store
 from ground_truth_validator        import validate as run_validation
+from nexon_psychometrics           import load_nexon_profiles
 from pathlib import Path
 import numpy as np
+import json as _json
+
+# ── Role-based UEBA threshold config ──────────────────────────────────────────
+_ROLE_CONFIG_PATH = Path(__file__).parent.parent / "storage" / "role_config.json"
+_role_config: dict = {}
+
+def _load_role_config():
+    global _role_config
+    if _ROLE_CONFIG_PATH.exists():
+        with open(_ROLE_CONFIG_PATH) as f:
+            _role_config = _json.load(f)
+        print(f"[Config] Loaded role config: {len(_role_config.get('roles',{}))} roles")
+    else:
+        print("[Config] role_config.json not found — using empty defaults")
+        _role_config = {"roles": {"default": {}}}
+
+def _get_role_cfg(role: str) -> dict:
+    roles = _role_config.get("roles", {})
+    return roles.get(role, roles.get("default", {}))
+
+def _save_role_config():
+    _ROLE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_ROLE_CONFIG_PATH, "w") as f:
+        _json.dump(_role_config, f, indent=2)
+
+_load_role_config()
+
+# Rule → (fv_field, config_key, base_weight)
+_RULE_ADJ = {
+    "bulk_download":       ("data_mb",        "bulk_download_mb",          18),
+    "massive_download":    ("data_mb",        "massive_download_mb",       32),
+    "bulk_file_access":    ("file_count",     "bulk_file_count",           16),
+    "extreme_file_access": ("file_count",     "extreme_file_count",        26),
+    "usb_exfil":           ("usb_data_mb",    "usb_exfil_mb",              20),
+    "external_email_bulk": ("recipient_count","external_email_recipients",  14),
+    "large_attachment":    ("attachment_mb",  "large_attachment_mb",        12),
+}
+
+def _role_adjusted_ueba(fv_dict: dict, role: str, ueba_score: int, rules: list) -> tuple:
+    """Reduce UEBA score/rules for activity that is normal for this role."""
+    cfg = _get_role_cfg(role)
+    if not cfg:
+        return ueba_score, rules
+    adjustment = 0
+    filtered = []
+    for rule in rules:
+        if rule in _RULE_ADJ:
+            fv_key, cfg_key, weight = _RULE_ADJ[rule]
+            threshold = cfg.get(cfg_key)
+            actual    = fv_dict.get(fv_key, 0)
+            if threshold is not None and actual < threshold:
+                adjustment -= weight
+                continue   # rule removed for this role
+        if rule == "off_hours_login":
+            mult = float(cfg.get("off_hours_weight", 1.0))
+            if mult < 1.0:
+                adjustment -= int(12 * (1.0 - mult))
+        elif rule == "vpn_suspicious":
+            mult = float(cfg.get("vpn_suspicious_weight", 1.0))
+            if mult < 1.0:
+                adjustment -= int(6 * (1.0 - mult))
+        filtered.append(rule)
+    return max(0, min(100, ueba_score + adjustment)), filtered
 
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
@@ -54,6 +118,8 @@ db       = DatabaseManager()
 
 CERT_DIR     = Path.home() / "Downloads" / "r4.2"
 psych_loaded = init_psychometrics(CERT_DIR)
+# Always load Nexon employee OCEAN profiles (supplements CERT data)
+load_nexon_profiles()
 
 user_profiles: dict = {}
 profile_lock = threading.Lock()
@@ -111,11 +177,13 @@ def _critical_fv():
 _EVENT_NAMES = {0:"login",1:"logoff",2:"file_access",3:"email",4:"usb",5:"web"}
 
 
-def _full_score(fv_dict: dict, user_id: str, feature_array=None) -> dict:
+def _full_score(fv_dict: dict, user_id: str, feature_array=None, role: str = "") -> dict:
     fv = FeatureVector(**{k: fv_dict.get(k,0) for k in FeatureVector.COLUMNS})
     from ai_analytics.anomaly_model import UEBAEngine
     ueba = UEBAEngine()
-    ueba_score, rules = ueba.score(fv)
+    raw_ueba_score, raw_rules = ueba.score(fv)
+    # Apply role-aware threshold adjustment
+    ueba_score, rules = _role_adjusted_ueba(fv_dict, role, raw_ueba_score, raw_rules)
     arr       = fv.to_array() if feature_array is None else feature_array
     if_score  = model._if.score(arr)
     lof_score = model._lof.score(arr)
@@ -156,13 +224,17 @@ def _sim(level):
         _suspicious_fv() if r<0.75 else
         _high_risk_fv()  if r<0.90 else _critical_fv()
     )
+    # Use real time for timestamp/storage; keep simulated hour in feature vector
+    # so IF/LOF score against the scenario's intended time pattern
+    _now = datetime.now()
+    fv_dict["is_off_hours"] = int(not (8 <= fv_dict["hour"] < 18))
     result = _full_score(fv_dict, user["id"])
     atype  = _EVENT_NAMES.get(fv_dict["event_type_code"],"login")
     uid    = user["id"]
     import uuid
     lid = str(uuid.uuid4())[:12]
     db.upsert_user(uid, user["dept"], user["role"])
-    db.insert_activity_log(lid, uid, datetime.now().isoformat(), atype, "simulator", details=fv_dict)
+    db.insert_activity_log(lid, uid, _now.isoformat(), atype, "simulator", details=fv_dict)
     db.insert_features("ft_"+lid, uid, lid, fv_dict)
     did = "dt_"+lid
     db.insert_anomaly_result(did, uid, lid, result)
@@ -180,7 +252,7 @@ def _sim(level):
         "psychometric_risk":result["psychometric_risk"],"pers_enhancement":result["pers_enhancement"],
         "risk_score":result["risk_score"],"severity":result["severity"],
         "ueba_score":result["ueba_score"],"if_score":result["if_score"],"lof_score":result["lof_score"],
-        "triggered_rules":result["triggered_rules"],"timestamp":datetime.now().isoformat()+"Z",
+        "triggered_rules":result["triggered_rules"],"timestamp":_now.isoformat()+"Z",
         "data_mb":fv_dict["data_mb"],"file_count":fv_dict["file_count"],"tor":bool(fv_dict["tor"]),
     }
     _broadcast_sse(pay)
@@ -193,7 +265,7 @@ def _process_event(raw):
     if not log.is_valid: return {"error":"Unprocessable event"}
     fv      = fe_eng.extractFeatures(log)
     uid     = log.user_id
-    result  = _full_score(fv.to_dict(), uid, fv.to_array())
+    result  = _full_score(fv.to_dict(), uid, fv.to_array(), role=raw.get("role",""))
     db.upsert_user(uid, raw.get("department",""), raw.get("role",""))
     db.insert_activity_log(log.log_id, uid, log.timestamp.isoformat(),
                            log.activity_type, log.source, details=fv.to_dict())
@@ -253,6 +325,185 @@ def _try_put(q, msg):
     try: q.put_nowait(msg); return True
     except queue.Full: return False
 
+
+@app.get("/api/config")
+def get_config():
+    return jsonify(_role_config), 200
+
+@app.put("/api/config")
+def update_config():
+    body = request.get_json(silent=True)
+    if not body: return jsonify({"error":"JSON body required"}), 400
+    global _role_config
+    _role_config = body
+    _save_role_config()
+    return jsonify({"message":"Config saved","roles":len(_role_config.get("roles",{}))}), 200
+
+@app.get("/company")
+def serve_company():
+    import os as _os
+    from flask import Response as _Resp
+    base = _os.path.dirname(_os.path.abspath(__file__))
+    paths = [
+        _os.path.join(base, "company_app.html"),
+        _os.path.join(_os.getcwd(), "application", "company_app.html"),
+    ]
+    for p in paths:
+        if _os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return _Resp(f.read(), mimetype="text/html")
+    return _Resp("<h1>Company portal not found</h1>", mimetype="text/html")
+
+# ── File download content generators ─────────────────────────────────────────
+
+_FILE_CONTENT = {
+    "Salary_Data_2025.xlsx": lambda dept: (
+        "employee_id,name,department,base_salary,bonus,total_comp\n" +
+        "\n".join(f"EMP{1000+i},{n},{dept},£{55000+i*2500:,},£{8000+i*500:,},£{63000+i*3000:,}"
+                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
+                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
+                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson",
+                                          "Maria White","Nathan Harris","Olivia Martin","Paul Thompson",
+                                          "Quinn Garcia","Rachel Martinez","Steve Robinson","Tina Clark"]))
+    ),
+    "admin_passwords.txt": lambda dept: (
+        "# NEXON TECHNOLOGIES — IT ADMIN CREDENTIALS\n"
+        "# CONFIDENTIAL — DO NOT DISTRIBUTE\n\n"
+        "[Database Servers]\n"
+        "prod-db-01.nexon.internal  admin  Nx!Pr0d@2025\n"
+        "prod-db-02.nexon.internal  admin  Nx!Pr0d@2025\n"
+        "staging-db.nexon.internal  admin  Nx!Stg@2025\n\n"
+        "[Active Directory]\n"
+        "ad.nexon.internal          administrator  N3x0n@AD!2025\n\n"
+        "[Cloud Console]\n"
+        "AWS Account ID: 123456789012\n"
+        "Root: admin@nexon.com  / N3x0nCl0ud!2025\n\n"
+        "[VPN Gateway]\n"
+        "vpn.nexon.internal  vpnadmin  VPN!Nx2025@sec\n"
+    ),
+    "prod_server_list.csv": lambda dept: (
+        "hostname,ip,role,os,owner,last_patch\n"
+        "prod-app-01,10.0.1.10,Application Server,Ubuntu 22.04,Engineering,2025-03-15\n"
+        "prod-app-02,10.0.1.11,Application Server,Ubuntu 22.04,Engineering,2025-03-15\n"
+        "prod-db-01,10.0.2.10,Primary Database,RHEL 9,DBA Team,2025-02-28\n"
+        "prod-db-02,10.0.2.11,Replica Database,RHEL 9,DBA Team,2025-02-28\n"
+        "prod-lb-01,10.0.0.5,Load Balancer,nginx/Ubuntu,Engineering,2025-03-01\n"
+        "prod-cache-01,10.0.3.10,Redis Cache,Ubuntu 22.04,Engineering,2025-03-10\n"
+        "backup-01,10.0.5.10,Backup Server,Ubuntu 22.04,IT Ops,2025-01-20\n"
+        "monitoring-01,10.0.6.10,Monitoring,Ubuntu 22.04,IT Ops,2025-03-01\n"
+    ),
+    "db_credentials.txt": lambda dept: (
+        "# Application Database Credentials\n"
+        "# Environment: Production\n\n"
+        "DB_HOST=prod-db-01.nexon.internal\n"
+        "DB_PORT=5432\n"
+        "DB_NAME=nexon_production\n"
+        "DB_USER=app_service\n"
+        "DB_PASSWORD=AppSvc!Nx2025@prod\n\n"
+        "# Read replica\n"
+        "DB_REPLICA_HOST=prod-db-02.nexon.internal\n"
+        "DB_REPLICA_USER=app_service_ro\n"
+        "DB_REPLICA_PASSWORD=R0Service!Nx2025\n"
+    ),
+    "deployment_config.yaml": lambda dept: (
+        "# Nexon Platform Deployment Configuration\n"
+        "# DO NOT COMMIT WITH SECRETS\n\n"
+        "environment: production\n"
+        "region: eu-west-1\n\n"
+        "database:\n"
+        "  host: prod-db-01.nexon.internal\n"
+        "  port: 5432\n"
+        "  name: nexon_production\n"
+        "  ssl: true\n\n"
+        "cache:\n"
+        "  host: prod-cache-01.nexon.internal\n"
+        "  port: 6379\n\n"
+        "services:\n"
+        "  api: { replicas: 3, port: 8080 }\n"
+        "  worker: { replicas: 2 }\n"
+        "  scheduler: { replicas: 1 }\n"
+    ),
+    "All_Employees_Personal.xlsx": lambda dept: (
+        "employee_id,full_name,dob,address,ni_number,bank_sort,bank_account,emergency_contact\n" +
+        "\n".join(f"EMP{1000+i},{n},19{70+i%30}-{(i%12)+1:02d}-{(i%28)+1:02d},"
+                  f"{i+1} High Street London,AB{100000+i}C,{20+i%80:02d}-{10+i%40:02d}-{30+i%70:02d},"
+                  f"{10000000+i*13},{n.split()[0]} {n.split()[-1]} (Parent)"
+                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
+                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
+                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson",
+                                          "Maria White","Nathan Harris","Olivia Martin","Paul Thompson",
+                                          "Quinn Garcia","Rachel Martinez","Steve Robinson","Tina Clark",
+                                          "Uma Patel","Victor Chen","Wendy Kim","Xavier Lee","Yara Singh"]))
+    ),
+    "firewall_rules.csv": lambda dept: (
+        "rule_id,action,protocol,src_ip,dst_ip,dst_port,description\n"
+        "FW001,ALLOW,TCP,0.0.0.0/0,10.0.0.5,443,HTTPS inbound to load balancer\n"
+        "FW002,ALLOW,TCP,0.0.0.0/0,10.0.0.5,80,HTTP inbound redirect\n"
+        "FW003,ALLOW,TCP,10.0.1.0/24,10.0.2.10,5432,App servers to primary DB\n"
+        "FW004,DENY,ANY,0.0.0.0/0,10.0.2.0/24,ANY,Block direct DB access from internet\n"
+        "FW005,ALLOW,TCP,10.0.0.0/8,10.0.6.10,9090,Internal monitoring access\n"
+        "FW006,DENY,ANY,192.168.50.0/24,ANY,ANY,Block legacy VLAN\n"
+        "FW007,ALLOW,TCP,10.0.0.0/8,ANY,22,SSH from internal only\n"
+    ),
+    "Active_Directory_Export.xlsx": lambda dept: (
+        "username,display_name,email,department,title,manager,groups,last_logon,account_status\n" +
+        "\n".join(f"usr{1000+i},{n},{n.lower().replace(' ','.')}" + "@nexon.com," +
+                  f"{dept},Employee,mgr001,Domain Users;{dept}_Users,2025-04-{(i%30)+1:02d},Active"
+                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
+                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
+                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson"]))
+    ),
+}
+
+def _generic_file_content(name: str, dept: str) -> str:
+    """Generate plausible text content for files not in the explicit map."""
+    base = name.rsplit(".", 1)[0].replace("_", " ")
+    lines = [
+        f"# {base}",
+        f"Department: {dept}",
+        f"Classification: CONFIDENTIAL",
+        f"Generated: 2025-04-10",
+        "",
+        f"This document contains {dept} department records.",
+        "Access is restricted to authorised personnel only.",
+        "",
+        "id,name,value,date,status",
+        "001,Record A,£12450.00,2025-01-15,Active",
+        "002,Record B,£8320.00,2025-02-03,Active",
+        "003,Record C,£19875.00,2025-02-28,Pending",
+        "004,Record D,£5100.00,2025-03-10,Active",
+        "005,Record E,£33200.00,2025-03-22,Review",
+    ]
+    return "\n".join(lines)
+
+
+@app.get("/api/files/download")
+def download_file():
+    from flask import make_response
+    name = request.args.get("name", "file.txt")
+    dept = request.args.get("dept", "General")
+    gen  = _FILE_CONTENT.get(name)
+    content = gen(dept) if gen else _generic_file_content(name, dept)
+    resp = make_response(content.encode("utf-8"))
+    resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    resp.headers["Content-Type"] = "text/plain; charset=utf-8"
+    resp.headers["Content-Length"] = len(content.encode("utf-8"))
+    return resp
+
+@app.get("/portal")
+def serve_portal():
+    import os as _os
+    from flask import Response as _Resp
+    base = _os.path.dirname(_os.path.abspath(__file__))
+    paths = [
+        _os.path.join(base, "employee_portal.html"),
+        _os.path.join(_os.getcwd(), "application", "employee_portal.html"),
+    ]
+    for p in paths:
+        if _os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return _Resp(f.read(), mimetype="text/html")
+    return _Resp("<h1>Employee Portal not found</h1>", mimetype="text/html")
 
 @app.get("/")
 @app.get("/dashboard")
