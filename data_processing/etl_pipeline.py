@@ -188,7 +188,9 @@ class ETLPipeline:
             p.usb_operation = str(d.get("operation", ""))
 
         elif raw.activity_type == "web":
-            p.risky_web = self._safe_bool(d.get("risky", False))
+            cat = str(d.get("category", "")).lower()
+            _risky_cats = {"tor", "cloud_storage", "file_sharing"}
+            p.risky_web = self._safe_bool(d.get("risky", False)) or cat in _risky_cats
             p.data_mb   = self._safe_float(d.get("bytes_out", 0)) / 1_048_576
 
     # ------ Main transform -------------------------------------------------

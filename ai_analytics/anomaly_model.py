@@ -46,14 +46,14 @@ class UEBAEngine:
         ("vpn_suspicious",       6, lambda f: f.vpn and f.is_off_hours),
         ("new_device",           8, lambda f: f.new_device),
         ("repeated_auth_fail",  12, lambda f: f.failed_attempts >= 3),
-        ("bulk_download",       18, lambda f: f.data_mb >= 500),
-        ("massive_download",    32, lambda f: f.data_mb >= 2000),
-        ("bulk_file_access",    16, lambda f: f.file_count >= 50),
-        ("extreme_file_access", 26, lambda f: f.file_count >= 200),
-        ("usb_exfil",           20, lambda f: f.usb_transfer and f.usb_data_mb >= 100),
+        ("bulk_download",       18, lambda f: f.data_mb >= 200),
+        ("massive_download",    32, lambda f: f.data_mb >= 1500),
+        ("bulk_file_access",    16, lambda f: f.file_count >= 30),
+        ("extreme_file_access", 26, lambda f: f.file_count >= 100),
+        ("usb_exfil",           20, lambda f: f.usb_transfer and f.usb_data_mb >= 50),
         ("external_email_bulk", 14, lambda f: f.external_email and f.recipient_count >= 5),
-        ("risky_web",           10, lambda f: f.risky_web),
-        ("large_attachment",    12, lambda f: f.attachment_mb >= 50),
+        ("risky_web",           20, lambda f: f.risky_web),
+        ("large_attachment",    12, lambda f: f.attachment_mb >= 25),
     ]
 
     def score(self, fv: FeatureVector) -> tuple[int, list[str]]:
@@ -86,7 +86,7 @@ class IsolationForestDetector:
     def score(self, x: np.ndarray) -> float:
         """Return anomaly probability [0,1]. 1 = most anomalous."""
         if not self.trained:
-            return 0.5
+            return 0.0
         Xs = self.scaler.transform(x.reshape(1, -1))
         raw = self.model.decision_function(Xs)[0]
         s   = float(1 - (raw - (-0.5)) / (0.5 - (-0.5)))
@@ -115,7 +115,7 @@ class LOFDetector:
     def score(self, x: np.ndarray) -> float:
         """Return anomaly probability [0,1]."""
         if not self.trained:
-            return 0.5
+            return 0.0
         Xs  = self.scaler.transform(x.reshape(1, -1))
         raw = self.model.decision_function(Xs)[0]   # negative_outlier_factor
         s   = float(1 - (raw - (-2.0)) / (0.5 - (-2.0)))
@@ -140,8 +140,8 @@ class AnomalyDetectionModel:
     UEBA_WEIGHT = 0.30
 
     SEVERITY_MAP = {
-        (0,  35): "normal",
-        (35, 60): "suspicious",
+        (0,  45): "normal",
+        (45, 60): "suspicious",
         (60, 80): "high_risk",
         (80, 101): "critical",
     }
@@ -206,7 +206,7 @@ class AnomalyDetectionModel:
             "model_type":      self.model_type,
             "risk_score":      composite,
             "severity":        severity,
-            "is_anomaly":      composite >= 35,
+            "is_anomaly":      composite >= 45,
             "if_score":        round(if_score, 4),
             "lof_score":       round(lof_score, 4),
             "ueba_score":      ueba_s,
