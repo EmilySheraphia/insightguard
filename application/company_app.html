@@ -1268,7 +1268,7 @@ function doUSBTransfer(){
   const prog=document.getElementById('usbProgress');const fill=document.getElementById('usbFill');
   if(prog){prog.style.display='block';let w=0;const iv=setInterval(()=>{w+=10;fill.style.width=w+'%';if(w>=100){clearInterval(iv);setTimeout(()=>{prog.style.display='none';fill.style.width='0%';},1000);}},150);}
   fireEvent({source:'usb',device_id:'usb-sandisk-001',operation:'transfer',data_mb:totalMB},'USB Transfer: '+selected.length+' files');
-  fireEvent({source:'file',file_path:'/company/',operation:'copy',file_count:selected.length,data_mb:totalMB,destination:'usb'},'Files copied to USB');
+  fireEvent({source:'file',file_path:currentPath,operation:'copy',file_count:selected.length,data_mb:totalMB,destination:'usb'},'Files copied to USB');
   toast('USB Transfer','Copying '+selected.length+' files ('+totalMB.toFixed(1)+' MB) to SanDisk Ultra','warning');
   saveUserState();
 }
