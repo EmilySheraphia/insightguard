@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Nexon Technologies — Employee Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+[data-theme="dark"]{
+  --bg:#0d1117;--surface:#161b22;--card:#21262d;--card-hover:#2a2f3a;
+  --border:#30363d;--border-subtle:#21262d;
+  --text:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
+  --shadow:0 8px 24px rgba(0,0,0,.5);--input-bg:#0d1117;--scrollbar:#30363d;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa;--surface:#ffffff;--card:#f0f3f6;--card-hover:#e8ecf0;
+  --border:#d0d7de;--border-subtle:#e8ecef;
+  --text:#1f2328;--text-secondary:#57606a;--text-muted:#9198a1;
+  --shadow:0 8px 24px rgba(0,0,0,.08);--input-bg:#f6f8fa;--scrollbar:#c8ccd0;
+}
+:root{
+  --green:#3fb950;--amber:#e3b341;--orange:#db6d28;--red:#f85149;--blue:#58a6ff;--purple:#bc8cff;
+  --r:8px;--r-lg:12px;--r-sm:5px;--tr:.18s ease;
+  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+}
+html{font-size:14px}
+body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh;overflow:hidden;transition:background var(--tr),color var(--tr)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:3px}
+
+/* ══════════ LOGIN ══════════ */
+#loginPage{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:8px;padding:20px}
+.login-brand{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.lb-mark{width:48px;height:48px;border-radius:13px;background:linear-gradient(135deg,#238636,#1a7f37);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:800}
+.lb-name{font-size:21px;font-weight:700;letter-spacing:-.3px}
+.lb-sub{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px;box-shadow:var(--shadow)}
+.login-title{font-size:17px;font-weight:600;margin-bottom:4px}
+.login-desc{font-size:12px;color:var(--text-secondary);margin-bottom:22px}
+.fg{margin-bottom:14px}
+.fl{display:block;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;font-family:var(--mono);margin-bottom:5px}
+.fi{width:100%;padding:9px 13px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:inherit;font-size:14px;outline:none;transition:border-color var(--tr)}
+.fi:focus{border-color:var(--blue)}
+.fi.err{border-color:var(--red)}
+.lbtn{width:100%;padding:11px;background:var(--blue);border:none;border-radius:var(--r);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all var(--tr);margin-top:6px}
+.lbtn:hover{background:#3d8ef5}
+.lerr{color:var(--red);font-size:12px;margin-top:8px;display:none}
+.login-hint{margin-top:14px;padding:11px 13px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text-secondary);line-height:1.7}
+.login-hint strong{color:var(--text)}
+code{font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:3px;font-size:11px}
+
+/* ══════════ APP SHELL ══════════ */
+#app{display:none;height:100vh;flex-direction:column;overflow:hidden}
+
+/* ── Topbar ── */
+.topbar{
+  height:50px;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;
+}
+.tb-logo{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.tb-mark{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#238636,#1a7f37);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800}
+.tb-name{font-size:14px;font-weight:700;letter-spacing:-.2px}
+.tb-div{width:1px;height:20px;background:var(--border);margin:0 4px;flex-shrink:0}
+/* app tabs */
+.app-tabs{display:flex;gap:2px;flex:1;overflow:hidden}
+.app-tab{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:var(--r-sm);border:none;background:transparent;color:var(--text-secondary);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:all var(--tr);white-space:nowrap;flex-shrink:0}
+.app-tab:hover{background:var(--card);color:var(--text)}
+.app-tab.active{background:var(--blue);color:#fff}
+.app-tab .tab-icon{font-size:14px}
+.tb-sp{flex:1}
+/* Risk chip */
+.risk-chip{display:flex;align-items:center;gap:7px;padding:5px 10px;background:var(--card);border:1px solid var(--border);border-radius:var(--r)}
+.risk-chip-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;transition:background var(--tr)}
+.risk-chip-dot.suspicious{background:var(--amber);animation:blink 1.5s infinite}
+.risk-chip-dot.high_risk{background:var(--orange);animation:blink 1s infinite}
+.risk-chip-dot.critical{background:var(--red);animation:blink .6s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.risk-label{font-family:var(--mono);font-size:11px;font-weight:600}
+.risk-score{font-family:var(--mono);font-size:12px;font-weight:700}
+.tb-user{display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--card);border:1px solid var(--border);border-radius:var(--r)}
+.tb-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.tb-uname{font-size:12px;font-weight:600}
+.tb-udept{font-size:10px;color:var(--text-muted)}
+.icon-btn{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:5px 7px;cursor:pointer;color:var(--text-secondary);font-size:13px;transition:all var(--tr)}
+.icon-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ── Workarea ── */
+.workarea{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* Panels */
+.panel{display:none;flex:1;overflow-y:auto;flex-direction:column}
+.panel.active{display:flex}
+
+/* ══════════ PANEL STYLES ══════════ */
+
+/* ── Shared ── */
+.pane-hdr{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;background:var(--surface)}
+.pane-title{font-size:15px;font-weight:600;flex:1}
+.pane-body{padding:16px 18px;flex:1;overflow-y:auto}
+.btn{padding:7px 14px;border-radius:var(--r);border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all var(--tr)}
+.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:#3d8ef5}
+.btn-green{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}.btn-green:hover{background:rgba(63,185,80,.25)}
+.btn-red{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.3)}.btn-red:hover{background:rgba(248,81,73,.2)}
+.btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}.btn-ghost:hover{background:var(--card)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg)}
+.card-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.card-hdr h3{font-size:13px;font-weight:600;flex:1}
+.card-body{padding:12px 14px}
+
+/* ── File Manager ── */
+.file-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.path-bar{flex:1;padding:5px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--mono);font-size:12px;color:var(--text-secondary);min-width:120px}
+.file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px}
+.file-item{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 10px;text-align:center;cursor:pointer;transition:all var(--tr);user-select:none}
+.file-item:hover{background:var(--card-hover);border-color:rgba(88,166,255,.3)}
+.file-item.selected{background:rgba(88,166,255,.1);border-color:rgba(88,166,255,.4)}
+.file-icon{font-size:26px;margin-bottom:6px}
+.file-name{font-size:11px;font-weight:500;word-break:break-word;line-height:1.3}
+.file-size{font-size:10px;color:var(--text-muted);margin-top:2px;font-family:var(--mono)}
+.file-list{display:flex;flex-direction:column;gap:1px;margin-top:8px}
+.file-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--tr)}
+.file-row:hover{background:var(--card)}
+.file-row.selected{background:rgba(88,166,255,.08)}
+.fr-icon{font-size:16px;flex-shrink:0}
+.fr-name{font-size:13px;flex:1;font-weight:500}
+.fr-size{font-size:11px;color:var(--text-muted);font-family:var(--mono);width:60px;text-align:right}
+.fr-date{font-size:10px;color:var(--text-muted);width:80px;text-align:right}
+.action-panel{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-top:10px}
+
+/* ── Email ── */
+.email-layout{display:flex;gap:0;height:calc(100vh - 110px);overflow:hidden}
+.email-sidebar{width:200px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto}
+.email-sidebar-item{padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background var(--tr);color:var(--text-secondary)}
+.email-sidebar-item:hover{background:var(--card)}
+.email-sidebar-item.active{background:var(--blue);color:#fff;font-weight:600}
+.email-sidebar-item .esi-count{margin-left:auto;font-size:10px;font-family:var(--mono)}
+.email-list{flex:1;overflow-y:auto;border-right:1px solid var(--border)}
+.email-item{padding:11px 14px;border-bottom:1px solid var(--border-subtle);cursor:pointer;transition:background var(--tr)}
+.email-item:hover{background:var(--card)}
+.email-item.unread .ei-subject{font-weight:600}
+.email-item.selected{background:var(--blue);color:#fff}
+.email-item.selected .ei-sender,.email-item.selected .ei-preview,.email-item.selected .ei-time{color:rgba(255,255,255,.75)}
+.ei-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.ei-sender{font-size:13px;font-weight:500}
+.ei-time{font-size:10px;color:var(--text-muted);font-family:var(--mono)}
+.ei-subject{font-size:12px;color:var(--text-secondary)}
+.ei-preview{font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.email-view{flex:1;overflow-y:auto;padding:18px}
+.ev-hdr{margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.ev-subject{font-size:17px;font-weight:600;margin-bottom:8px}
+.ev-meta{font-size:12px;color:var(--text-secondary);display:flex;gap:14px;flex-wrap:wrap}
+.ev-body{font-size:13px;line-height:1.7;color:var(--text);white-space:pre-line}
+.ev-attachment{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;margin-top:10px;cursor:pointer;transition:background var(--tr)}
+.ev-attachment:hover{background:var(--card-hover)}
+/* compose */
+.compose-modal{position:fixed;bottom:0;right:24px;width:480px;background:var(--surface);border:1px solid var(--border);border-top-left-radius:var(--r-lg);border-top-right-radius:var(--r-lg);box-shadow:var(--shadow);z-index:200;display:none;flex-direction:column}
+.compose-modal.open{display:flex}
+.compose-hdr{padding:10px 14px;background:var(--card);border-bottom:1px solid var(--border);border-top-left-radius:var(--r-lg);border-top-right-radius:var(--r-lg);display:flex;align-items:center;justify-content:space-between;cursor:move}
+.compose-hdr-title{font-size:13px;font-weight:600}
+.compose-body{padding:12px;display:flex;flex-direction:column;gap:8px;flex:1}
+.compose-field{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-subtle);padding-bottom:8px}
+.compose-field label{font-size:12px;color:var(--text-muted);width:60px;flex-shrink:0}
+.compose-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:inherit;font-size:13px}
+.compose-body-area{flex:1;background:transparent;border:none;outline:none;resize:none;color:var(--text);font-family:inherit;font-size:13px;line-height:1.6;min-height:120px;padding:0}
+.compose-footer{padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.ext-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none}
+.ext-toggle input{cursor:pointer}
+.attach-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)}
+
+/* ── Browser ── */
+.browser-bar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--card);border-bottom:1px solid var(--border);flex-shrink:0}
+.browser-url{flex:1;padding:6px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:18px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;transition:border-color var(--tr)}
+.browser-url:focus{border-color:var(--blue)}
+.browser-content{flex:1;overflow-y:auto;padding:16px}
+.browser-bookmark-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px}
+.bm-tile{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;text-align:center;cursor:pointer;transition:all var(--tr)}
+.bm-tile:hover{background:var(--card-hover);border-color:rgba(88,166,255,.3)}
+.bm-icon{font-size:26px;margin-bottom:6px}
+.bm-label{font-size:12px;font-weight:500}
+.bm-domain{font-size:10px;color:var(--text-muted);margin-top:2px;font-family:var(--mono)}
+.bm-risk{font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;margin-top:4px;display:inline-block}
+.bm-safe{background:rgba(63,185,80,.1);color:var(--green)}
+.bm-suspicious{background:rgba(227,179,65,.1);color:var(--amber)}
+.bm-risky{background:rgba(248,81,73,.1);color:var(--red)}
+.browser-page{animation:fadein .2s}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.site-header{display:flex;align-items:center;gap:12px;padding:16px;background:var(--card);border-radius:var(--r-lg);margin-bottom:14px;border:1px solid var(--border)}
+.site-icon{font-size:32px}
+.site-name{font-size:17px;font-weight:700}
+.site-url{font-size:11px;color:var(--text-muted);font-family:var(--mono)}
+.site-body{padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);font-size:13px;line-height:1.7;color:var(--text-secondary)}
+
+/* ── USB ── */
+.usb-slot{display:flex;align-items:center;gap:14px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:10px}
+.usb-icon-big{font-size:32px}
+.usb-info{flex:1}
+.usb-name{font-size:14px;font-weight:600;margin-bottom:2px}
+.usb-status{font-size:12px;color:var(--text-secondary)}
+.usb-progress{margin-top:8px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;display:none}
+.usb-fill{height:100%;width:0%;background:var(--blue);border-radius:3px;transition:width .3s ease}
+.usb-files{margin-top:6px;display:none}
+.usb-file-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-subtle);font-size:12px}
+.usb-file-item:last-child{border:none}
+
+
+/* ── Toasts ── */
+#tc{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:7px;z-index:9999}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:10px 13px;box-shadow:var(--shadow);max-width:280px;display:flex;align-items:flex-start;gap:8px;animation:tin .2s ease}
+.toast.success{border-color:rgba(63,185,80,.4)}.toast.warning{border-color:rgba(227,179,65,.4)}.toast.danger{border-color:rgba(248,81,73,.4)}.toast.info{border-color:rgba(88,166,255,.35)}
+.t-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.t-title{font-size:12px;font-weight:600;margin-bottom:2px}
+.t-msg{font-size:11px;color:var(--text-secondary);line-height:1.4}
+@keyframes tin{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes tout{from{opacity:1}to{opacity:0;transform:translateX(8px)}}
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOGIN ══════════ -->
+<div id="loginPage">
+  <div class="login-brand">
+    <div class="lb-mark">N</div>
+    <div><div class="lb-name">NEXON TECHNOLOGIES</div><div class="lb-sub">Employee Self-Service Portal</div></div>
+  </div>
+  <div class="login-card">
+    <div class="login-title">Sign in to your account</div>
+    <div class="login-desc">Use your Nexon employee credentials</div>
+    <div class="fg"><label class="fl">Username</label><input class="fi" id="lu" type="text" placeholder="e.g. james.carter" list="empList" autocomplete="off"><datalist id="empList"></datalist></div>
+    <div class="fg"><label class="fl">Password</label><input class="fi" id="lp" type="password" placeholder="nexon123"></div>
+    <div class="lerr" id="lerr">Incorrect username or password.</div>
+    <button class="lbtn" onclick="doLogin()">Sign In</button>
+    <div class="login-hint">
+      <strong>All employees:</strong> password is <code>nexon123</code><br>
+      Try: <code>james.carter</code> · <code>liam.anderson</code> · <code>riley.chen</code> · <code>sarah.chen</code>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">Nexon Technologies © 2025 · Powered by InsightGuard UEBA</div>
+</div>
+
+<!-- ══════════ APP ══════════ -->
+<div id="app">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="tb-logo">
+      <div class="tb-mark">N</div>
+      <div class="tb-name">NEXON TECHNOLOGIES</div>
+    </div>
+    <div class="tb-div"></div>
+    <div class="app-tabs">
+      <button class="app-tab active" data-panel="home" onclick="switchPanel('home')"><span class="tab-icon">🏠</span>Home</button>
+      <button class="app-tab" data-panel="files" onclick="switchPanel('files')"><span class="tab-icon">📁</span>Files</button>
+      <button class="app-tab" data-panel="email" onclick="switchPanel('email')"><span class="tab-icon">✉️</span>Email</button>
+      <button class="app-tab" data-panel="browser" onclick="switchPanel('browser')"><span class="tab-icon">🌐</span>Browser</button>
+      <button class="app-tab" data-panel="usb" onclick="switchPanel('usb')"><span class="tab-icon">🔌</span>USB / Devices</button>
+    </div>
+    <div class="tb-sp"></div>
+    <div class="risk-chip" id="riskChip" title="Your current InsightGuard risk level">
+      <div class="risk-chip-dot" id="riskDot"></div>
+      <span class="risk-label" id="riskLabel">Normal</span>
+      <span class="risk-score" id="riskScore">0</span>
+    </div>
+    <div class="tb-user">
+      <div class="tb-av" id="tbAv">JC</div>
+      <div><div class="tb-uname" id="tbName">James Carter</div><div class="tb-udept" id="tbDept">Finance</div></div>
+    </div>
+    <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="Theme">🌙</button>
+    <button class="icon-btn" onclick="doLogout()" title="Sign out">↩</button>
+  </header>
+
+  <!-- Workarea: panel + activity sidebar -->
+  <div style="display:flex;flex:1;overflow:hidden">
+    <div class="workarea">
+
+      <!-- ══ HOME ══ -->
+      <div class="panel active" id="panelHome">
+        <div class="pane-hdr">
+          <div class="pane-title" id="homeGreeting">Good morning, James</div>
+          <span style="font-size:12px;color:var(--text-muted)" id="homeDate"></span>
+        </div>
+        <div class="pane-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px">
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:all var(--tr)" onclick="switchPanel('files')" class="hover-card">
+              <div style="font-size:28px;margin-bottom:8px">📁</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:4px">My Files</div>
+              <div style="font-size:11px;color:var(--text-secondary)">Access company documents</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:all var(--tr)" onclick="switchPanel('email')">
+              <div style="font-size:28px;margin-bottom:8px">✉️</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:4px">Email</div>
+              <div style="font-size:11px;color:var(--text-secondary)" id="homeUnreadCount">—</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:all var(--tr)" onclick="switchPanel('browser')">
+              <div style="font-size:28px;margin-bottom:8px">🌐</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:4px">Browser</div>
+              <div style="font-size:11px;color:var(--text-secondary)">Company intranet & web</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:all var(--tr)" onclick="switchPanel('usb')">
+              <div style="font-size:28px;margin-bottom:8px">🔌</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:4px">USB / Devices</div>
+              <div style="font-size:11px;color:var(--text-secondary)">External device manager</div>
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-secondary)">🏢 Company Announcements</div>
+            <div style="display:flex;flex-direction:column;gap:8px" id="announcements"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ FILES ══ -->
+      <div class="panel" id="panelFiles">
+        <div class="pane-hdr">
+          <div>
+            <div class="pane-title">File Explorer</div>
+            <div style="font-size:11px;color:var(--text-muted)">Company document management</div>
+          </div>
+          <div class="file-toolbar" style="margin-left:auto">
+            <div class="path-bar" id="pathBar">/company/</div>
+            <button class="btn btn-ghost" onclick="fileNav('up')">↑ Up</button>
+            <select id="viewMode" onchange="renderFiles()" style="padding:5px 8px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:inherit;font-size:12px;outline:none">
+              <option value="grid">Grid</option><option value="list">List</option>
+            </select>
+          </div>
+        </div>
+        <div class="pane-body">
+          <div id="fileContainer"></div>
+          <div class="action-panel" id="fileActions" style="display:none">
+            <span style="font-size:12px;color:var(--text-secondary)" id="selectedCount">0 selected</span>
+            <button class="btn btn-green" onclick="openFiles()">📖 Open</button>
+            <button class="btn btn-ghost" onclick="copyFiles()">📋 Copy</button>
+            <button class="btn btn-ghost" onclick="saveToUSB()">🔌 Copy to USB</button>
+            <button class="btn btn-red" onclick="deleteFiles()">🗑 Delete</button>
+            <button class="btn btn-ghost" onclick="downloadFiles()">⬇️ Download</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ EMAIL ══ -->
+      <div class="panel" id="panelEmail">
+        <div class="pane-hdr">
+          <div class="pane-title">Email</div>
+          <button class="btn btn-primary" onclick="openCompose()" style="margin-left:auto">✏️ Compose</button>
+        </div>
+        <div class="email-layout">
+          <!-- Folder sidebar -->
+          <div class="email-sidebar">
+            <div class="email-sidebar-item active" data-folder="inbox" onclick="selectFolder('inbox',this)">📥 Inbox <span class="esi-count" id="inboxCount">0</span></div>
+            <div class="email-sidebar-item" data-folder="sent" onclick="selectFolder('sent',this)">📤 Sent</div>
+            <div class="email-sidebar-item" data-folder="drafts" onclick="selectFolder('drafts',this)">📝 Drafts</div>
+            <div class="email-sidebar-item" data-folder="archive" onclick="selectFolder('archive',this)">📦 Archive</div>
+            <div style="padding:8px 14px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-top:8px;font-family:var(--mono)">Labels</div>
+            <div class="email-sidebar-item" data-folder="work" onclick="selectFolder('work',this)">🔵 Work</div>
+            <div class="email-sidebar-item" data-folder="external" onclick="selectFolder('external',this)">🟡 External</div>
+          </div>
+          <!-- Email list -->
+          <div class="email-list" id="emailList"></div>
+          <!-- Email view -->
+          <div class="email-view" id="emailView">
+            <div style="text-align:center;color:var(--text-muted);font-size:13px;padding:60px 20px">
+              <div style="font-size:32px;margin-bottom:10px">✉️</div>
+              Select an email to read it
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ BROWSER ══ -->
+      <div class="panel" id="panelBrowser">
+        <div class="browser-bar">
+          <button class="btn btn-ghost" style="padding:5px 9px" onclick="browserBack()">←</button>
+          <button class="btn btn-ghost" style="padding:5px 9px" onclick="browserHome()">🏠</button>
+          <input class="browser-url" id="browserUrl" placeholder="Search or type a URL…" onkeydown="if(event.key==='Enter')navigateTo(this.value)">
+          <button class="btn btn-primary" onclick="navigateTo(document.getElementById('browserUrl').value)">Go</button>
+        </div>
+        <div class="browser-content" id="browserContent"></div>
+      </div>
+
+      <!-- ══ USB ══ -->
+      <div class="panel" id="panelUSB">
+        <div class="pane-hdr">
+          <div class="pane-title">USB & External Devices</div>
+          <button class="btn btn-green" onclick="insertUSB()" id="usbInsertBtn">🔌 Insert USB Drive</button>
+        </div>
+        <div class="pane-body">
+          <div id="usbSlots"></div>
+          <div style="margin-top:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">Transfer Files to USB</div>
+            <div id="usbTransferPanel" style="display:none">
+              <div style="display:flex;flex-direction:column;gap:8px" id="usbFileSelect"></div>
+              <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+                <button class="btn btn-primary" onclick="doUSBTransfer()">⬆️ Transfer Selected Files</button>
+                <span style="font-size:12px;color:var(--text-secondary)" id="usbTransferSize"></span>
+              </div>
+            </div>
+            <div id="usbNoDevice" style="font-size:12px;color:var(--text-muted);padding:12px 0">No USB drive inserted. Click "Insert USB Drive" to connect one.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /workarea -->
+
+
+  </div><!-- /flex row -->
+
+  <!-- Compose modal -->
+  <div class="compose-modal" id="composeModal">
+    <div class="compose-hdr">
+      <span class="compose-hdr-title">New Message</span>
+      <div style="display:flex;gap:4px">
+        <button class="icon-btn" onclick="minimizeCompose()">—</button>
+        <button class="icon-btn" onclick="closeCompose()">✕</button>
+      </div>
+    </div>
+    <div class="compose-body">
+      <div class="compose-field"><label>To:</label><input class="compose-input" id="cTo" placeholder="recipient@example.com (comma-separated)"></div>
+      <div class="compose-field"><label>Subject:</label><input class="compose-input" id="cSubject" placeholder="Subject"></div>
+      <textarea class="compose-body-area" id="cBody" placeholder="Write your message…"></textarea>
+    </div>
+    <div class="compose-footer">
+      <label class="ext-toggle"><input type="checkbox" id="cExternal"> External recipients</label>
+      <label class="attach-row">📎 <input type="number" id="cAttachCount" min="0" max="20" value="0" style="width:40px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:2px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none"> files</label>
+      <input type="number" id="cAttachMB" min="0" value="0" style="width:50px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:2px 6px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none"> MB
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="sendEmail()">Send ✈️</button>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div id="tc"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  EMPLOYEES
+// ══════════════════════════════════════════════════════
+const EMPLOYEES=[
+  {id:"alex.morgan",      name:"Alex Morgan",       dept:"Engineering",role:"Software Engineer",      pass:"nexon123"},
+  {id:"sam.patel",        name:"Sam Patel",          dept:"Engineering",role:"Senior Developer",       pass:"nexon123"},
+  {id:"jordan.lee",       name:"Jordan Lee",         dept:"Engineering",role:"Full Stack Developer",   pass:"nexon123"},
+  {id:"casey.kim",        name:"Casey Kim",          dept:"Engineering",role:"DevOps Engineer",        pass:"nexon123"},
+  {id:"riley.chen",       name:"Riley Chen",         dept:"Engineering",role:"Backend Developer",      pass:"nexon123"},
+  {id:"drew.johnson",     name:"Drew Johnson",       dept:"Engineering",role:"Frontend Developer",     pass:"nexon123"},
+  {id:"taylor.wong",      name:"Taylor Wong",        dept:"Engineering",role:"Software Engineer",      pass:"nexon123"},
+  {id:"morgan.davis",     name:"Morgan Davis",       dept:"Engineering",role:"Lead Developer",         pass:"nexon123"},
+  {id:"quinn.harris",     name:"Quinn Harris",       dept:"Engineering",role:"DevOps Engineer",        pass:"nexon123"},
+  {id:"avery.martin",     name:"Avery Martin",       dept:"Engineering",role:"Junior Developer",       pass:"nexon123"},
+  {id:"james.carter",     name:"James Carter",       dept:"Finance",    role:"Financial Analyst",      pass:"nexon123"},
+  {id:"sarah.chen",       name:"Sarah Chen",         dept:"Finance",    role:"Senior Analyst",         pass:"nexon123"},
+  {id:"michael.torres",   name:"Michael Torres",     dept:"Finance",    role:"Accountant",             pass:"nexon123"},
+  {id:"lisa.nguyen",      name:"Lisa Nguyen",        dept:"Finance",    role:"Finance Manager",        pass:"nexon123"},
+  {id:"david.kim",        name:"David Kim",          dept:"Finance",    role:"Budget Analyst",         pass:"nexon123"},
+  {id:"emma.wilson",      name:"Emma Wilson",        dept:"Finance",    role:"Controller",             pass:"nexon123"},
+  {id:"ryan.patel",       name:"Ryan Patel",         dept:"Finance",    role:"Financial Director",     pass:"nexon123"},
+  {id:"olivia.brown",     name:"Olivia Brown",       dept:"Finance",    role:"Payroll Specialist",     pass:"nexon123"},
+  {id:"jessica.moore",    name:"Jessica Moore",      dept:"HR",         role:"HR Manager",             pass:"nexon123"},
+  {id:"daniel.taylor",    name:"Daniel Taylor",      dept:"HR",         role:"Recruiter",              pass:"nexon123"},
+  {id:"sophia.jackson",   name:"Sophia Jackson",     dept:"HR",         role:"HR Specialist",          pass:"nexon123"},
+  {id:"ethan.white",      name:"Ethan White",        dept:"HR",         role:"People Operations",      pass:"nexon123"},
+  {id:"ava.martinez",     name:"Ava Martinez",       dept:"HR",         role:"Benefits Admin",         pass:"nexon123"},
+  {id:"noah.thompson",    name:"Noah Thompson",      dept:"HR",         role:"Training Manager",       pass:"nexon123"},
+  {id:"liam.anderson",    name:"Liam Anderson",      dept:"IT",         role:"SysAdmin",               pass:"nexon123"},
+  {id:"mia.thomas",       name:"Mia Thomas",         dept:"IT",         role:"Network Engineer",       pass:"nexon123"},
+  {id:"jacob.garcia",     name:"Jacob Garcia",       dept:"IT",         role:"Security Analyst",       pass:"nexon123"},
+  {id:"isabella.robinson",name:"Isabella Robinson",  dept:"IT",         role:"IT Support",             pass:"nexon123"},
+  {id:"mason.clark",      name:"Mason Clark",        dept:"IT",         role:"Infrastructure Engineer",pass:"nexon123"},
+  {id:"charlotte.lewis",  name:"Charlotte Lewis",    dept:"IT",         role:"Cloud Engineer",         pass:"nexon123"},
+  {id:"aiden.lee",        name:"Aiden Lee",          dept:"Sales",      role:"Account Executive",      pass:"nexon123"},
+  {id:"emily.walker",     name:"Emily Walker",       dept:"Sales",      role:"Sales Manager",          pass:"nexon123"},
+  {id:"lucas.hall",       name:"Lucas Hall",         dept:"Sales",      role:"Regional Sales Rep",     pass:"nexon123"},
+  {id:"amelia.allen",     name:"Amelia Allen",       dept:"Sales",      role:"Sales Representative",   pass:"nexon123"},
+  {id:"oliver.young",     name:"Oliver Young",       dept:"Sales",      role:"Business Development",   pass:"nexon123"},
+  {id:"harper.hernandez", name:"Harper Hernandez",   dept:"Sales",      role:"Sales Director",         pass:"nexon123"},
+  {id:"elijah.king",      name:"Elijah King",        dept:"Sales",      role:"Account Manager",        pass:"nexon123"},
+  {id:"abigail.wright",   name:"Abigail Wright",     dept:"Sales",      role:"Sales Representative",   pass:"nexon123"},
+  {id:"james.lopez",      name:"James Lopez",        dept:"Sales",      role:"Enterprise Sales",       pass:"nexon123"},
+  {id:"sophia.hill",      name:"Sophia Hill",        dept:"Marketing",  role:"Marketing Manager",      pass:"nexon123"},
+  {id:"william.scott",    name:"William Scott",      dept:"Marketing",  role:"Content Strategist",     pass:"nexon123"},
+  {id:"mia.green",        name:"Mia Green",          dept:"Marketing",  role:"SEO Specialist",         pass:"nexon123"},
+  {id:"jackson.adams",    name:"Jackson Adams",      dept:"Marketing",  role:"Brand Manager",          pass:"nexon123"},
+  {id:"scarlett.baker",   name:"Scarlett Baker",     dept:"Marketing",  role:"Social Media Manager",   pass:"nexon123"},
+  {id:"henry.nelson",     name:"Henry Nelson",       dept:"Marketing",  role:"Marketing Analyst",      pass:"nexon123"},
+  {id:"victoria.carter",  name:"Victoria Carter",    dept:"Legal",      role:"Legal Counsel",          pass:"nexon123"},
+  {id:"sebastian.mitchell",name:"Sebastian Mitchell",dept:"Legal",      role:"Contract Specialist",    pass:"nexon123"},
+  {id:"grace.perez",      name:"Grace Perez",        dept:"Legal",      role:"Compliance Officer",     pass:"nexon123"},
+  {id:"joseph.roberts",   name:"Joseph Roberts",     dept:"Legal",      role:"Paralegal",              pass:"nexon123"},
+  {id:"robert.anderson",  name:"Robert Anderson",    dept:"Executive",  role:"Chief Executive Officer",pass:"nexon123"},
+  {id:"jennifer.williams",name:"Jennifer Williams",  dept:"Executive",  role:"Chief Financial Officer",pass:"nexon123"},
+  {id:"michael.johnson",  name:"Michael Johnson",    dept:"Executive",  role:"Chief Technology Officer",pass:"nexon123"},
+  {id:"luna.turner",      name:"Luna Turner",        dept:"Operations", role:"Operations Manager",     pass:"nexon123"},
+  {id:"eli.phillips",     name:"Eli Phillips",       dept:"Operations", role:"Project Manager",        pass:"nexon123"},
+  {id:"nora.campbell",    name:"Nora Campbell",      dept:"Operations", role:"Operations Analyst",     pass:"nexon123"},
+];
+
+// ══════════════════════════════════════════════════════
+//  PER-USER STATE MANAGEMENT
+// ══════════════════════════════════════════════════════
+function _stateKey(uid){return 'nc_state_'+uid;}
+
+function buildInitialState(e){
+  const deptFS=DEPT_FS_TEMPLATES[e.dept]||DEPT_FS_TEMPLATES.General;
+  const filesystem={};
+  Object.keys(deptFS).forEach(path=>{
+    filesystem[path]=deptFS[path].map(f=>({...f}));
+  });
+  const deptMails=DEPT_EMAIL_TEMPLATES[e.dept]||[];
+  const allTemplates=[...SHARED_EMAILS,...deptMails];
+  const emails=allTemplates.map((m,i)=>({
+    ...m,id:i,unread:i<(deptMails.length+2),folder:'inbox',
+    date:new Date(Date.now()-i*3600000*2).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+  }));
+  return {filesystem,emails,usbInserted:false,usbFiles:[],browserHistory:[],downloadedFiles:[]};
+}
+
+function loadUserState(e){
+  try{
+    const raw=localStorage.getItem(_stateKey(e.id));
+    if(raw){
+      const s=JSON.parse(raw);
+      currentFS=s.filesystem||{};
+      currentEmails=s.emails||[];
+      currentUSBInserted=s.usbInserted||false;
+      currentUSBFiles=s.usbFiles||[];
+      currentBrowserHistory=s.browserHistory||[];
+      return;
+    }
+  }catch(err){}
+  const s=buildInitialState(e);
+  currentFS=s.filesystem;
+  currentEmails=s.emails;
+  currentUSBInserted=s.usbInserted;
+  currentUSBFiles=s.usbFiles;
+  currentBrowserHistory=s.browserHistory;
+  saveUserState();
+}
+
+function saveUserState(){
+  if(!emp)return;
+  try{
+    localStorage.setItem(_stateKey(emp.id),JSON.stringify({
+      filesystem:currentFS,
+      emails:currentEmails,
+      usbInserted:currentUSBInserted,
+      usbFiles:currentUSBFiles,
+      browserHistory:currentBrowserHistory,
+      downloadedFiles:[]
+    }));
+  }catch(err){}
+}
+
+// ══════════════════════════════════════════════════════
+//  DEPT FILESYSTEM TEMPLATES
+// ══════════════════════════════════════════════════════
+const _SHARED_ROOT_FILES=[
+  {name:'All Staff Policy.pdf',type:'file',icon:'📄',size:'2.1 MB',mb:2.1},
+  {name:'Company Handbook 2025.docx',type:'file',icon:'📝',size:'5.4 MB',mb:5.4},
+];
+const DEPT_FS_TEMPLATES={
+  Engineering:{
+    '/home/':[
+      {name:'Projects',type:'folder',icon:'📂'},
+      {name:'Architecture',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'API_Spec_v3.pdf',type:'file',icon:'📄',size:'3.2 MB',mb:3.2},
+      {name:'Dev_Setup.md',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+    '/home/Projects/':[
+      {name:'Source_Code_Archive.zip',type:'file',icon:'🗜',size:'430 MB',mb:430,sensitive:true},
+      {name:'db_credentials.txt',type:'file',icon:'🔑',size:'0.01 MB',mb:0.01,sensitive:true},
+      {name:'prod_server_list.csv',type:'file',icon:'📊',size:'0.5 MB',mb:0.5,sensitive:true},
+      {name:'deployment_config.yaml',type:'file',icon:'⚙️',size:'0.1 MB',mb:0.1},
+    ],
+    '/home/Architecture/':[
+      {name:'System_Design_v3.pdf',type:'file',icon:'📄',size:'15.3 MB',mb:15.3},
+      {name:'DB_Schema.pdf',type:'file',icon:'📄',size:'4.2 MB',mb:4.2},
+      {name:'Cloud_Architecture.pptx',type:'file',icon:'📊',size:'8.8 MB',mb:8.8},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Finance:{
+    '/home/':[
+      {name:'Finance_Reports',type:'folder',icon:'📂'},
+      {name:'Payroll',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Budget_Tracker_2025.xlsx',type:'file',icon:'📊',size:'6.7 MB',mb:6.7},
+      {name:'Expense_Policy.pdf',type:'file',icon:'📄',size:'1.2 MB',mb:1.2},
+    ],
+    '/home/Finance_Reports/':[
+      {name:'Q1_2025_Report.xlsx',type:'file',icon:'📊',size:'8.2 MB',mb:8.2},
+      {name:'Q2_Financial_Model.xlsx',type:'file',icon:'📊',size:'9.1 MB',mb:9.1},
+      {name:'Annual_Report_2024.pdf',type:'file',icon:'📄',size:'4.3 MB',mb:4.3},
+      {name:'Audit_Trail.csv',type:'file',icon:'📊',size:'3.1 MB',mb:3.1,sensitive:true},
+    ],
+    '/home/Payroll/':[
+      {name:'Salary_Data_2025.xlsx',type:'file',icon:'📊',size:'12.5 MB',mb:12.5,sensitive:true},
+      {name:'Salary_Bands.xlsx',type:'file',icon:'📊',size:'5.2 MB',mb:5.2,sensitive:true},
+      {name:'Bonus_Payments_Q2.xlsx',type:'file',icon:'📊',size:'3.8 MB',mb:3.8,sensitive:true},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  HR:{
+    '/home/':[
+      {name:'Employee_Records',type:'folder',icon:'📂'},
+      {name:'Recruitment',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Org_Chart_2025.pdf',type:'file',icon:'📄',size:'1.8 MB',mb:1.8},
+      {name:'Onboarding_Checklist.docx',type:'file',icon:'📝',size:'0.9 MB',mb:0.9},
+    ],
+    '/home/Employee_Records/':[
+      {name:'All_Employees_Personal.xlsx',type:'file',icon:'📊',size:'28.5 MB',mb:28.5,sensitive:true},
+      {name:'Disciplinary_Records.xlsx',type:'file',icon:'📊',size:'5.1 MB',mb:5.1,sensitive:true},
+      {name:'Performance_Reviews_Q1.xlsx',type:'file',icon:'📊',size:'14.2 MB',mb:14.2,sensitive:true},
+      {name:'Contracts_2025.zip',type:'file',icon:'🗜',size:'65.3 MB',mb:65.3,sensitive:true},
+    ],
+    '/home/Recruitment/':[
+      {name:'Job_Descriptions.docx',type:'file',icon:'📝',size:'0.8 MB',mb:0.8},
+      {name:'Interview_Templates.docx',type:'file',icon:'📝',size:'0.4 MB',mb:0.4},
+      {name:'Candidate_Pipeline_Q2.xlsx',type:'file',icon:'📊',size:'3.2 MB',mb:3.2},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  IT:{
+    '/home/':[
+      {name:'Admin',type:'folder',icon:'📂'},
+      {name:'Network',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'IT_Helpdesk_Log.xlsx',type:'file',icon:'📊',size:'2.1 MB',mb:2.1},
+    ],
+    '/home/Admin/':[
+      {name:'admin_passwords.txt',type:'file',icon:'🔑',size:'0.01 MB',mb:0.01,sensitive:true},
+      {name:'Active_Directory_Export.xlsx',type:'file',icon:'📊',size:'15.2 MB',mb:15.2,sensitive:true},
+      {name:'server_logs.txt',type:'file',icon:'📄',size:'8.7 MB',mb:8.7},
+      {name:'Backup_Schedule.xlsx',type:'file',icon:'📊',size:'0.5 MB',mb:0.5},
+    ],
+    '/home/Network/':[
+      {name:'firewall_rules.csv',type:'file',icon:'📄',size:'1.0 MB',mb:1.0,sensitive:true},
+      {name:'network_topology.pdf',type:'file',icon:'📄',size:'3.2 MB',mb:3.2},
+      {name:'VPN_Config.yaml',type:'file',icon:'⚙️',size:'0.05 MB',mb:0.05,sensitive:true},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Sales:{
+    '/home/':[
+      {name:'CRM',type:'folder',icon:'📂'},
+      {name:'Proposals',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Pricing_Guide_2025.pdf',type:'file',icon:'📄',size:'2.3 MB',mb:2.3},
+    ],
+    '/home/CRM/':[
+      {name:'Client_List_Q2.xlsx',type:'file',icon:'📊',size:'16.8 MB',mb:16.8,sensitive:true},
+      {name:'Lead_Database.xlsx',type:'file',icon:'📊',size:'31.2 MB',mb:31.2,sensitive:true},
+      {name:'Pipeline_Q2.xlsx',type:'file',icon:'📊',size:'8.4 MB',mb:8.4},
+      {name:'Commission_Tracker.xlsx',type:'file',icon:'📊',size:'2.1 MB',mb:2.1,sensitive:true},
+    ],
+    '/home/Proposals/':[
+      {name:'BigCorp_Proposal_v3.docx',type:'file',icon:'📝',size:'4.5 MB',mb:4.5},
+      {name:'Enterprise_Template.docx',type:'file',icon:'📝',size:'1.2 MB',mb:1.2},
+      {name:'Q2_Contracts.zip',type:'file',icon:'🗜',size:'22.3 MB',mb:22.3},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Legal:{
+    '/home/':[
+      {name:'Contracts',type:'folder',icon:'📂'},
+      {name:'NDAs',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Regulatory_Filings_2025.pdf',type:'file',icon:'📄',size:'22.4 MB',mb:22.4},
+    ],
+    '/home/Contracts/':[
+      {name:'Contracts_Archive_2025.zip',type:'file',icon:'🗜',size:'65.1 MB',mb:65.1,sensitive:true},
+      {name:'Litigation_Log.xlsx',type:'file',icon:'📊',size:'3.2 MB',mb:3.2,sensitive:true},
+      {name:'IP_Portfolio.pdf',type:'file',icon:'📄',size:'8.7 MB',mb:8.7},
+    ],
+    '/home/NDAs/':[
+      {name:'NDA_Template.docx',type:'file',icon:'📝',size:'0.5 MB',mb:0.5},
+      {name:'Signed_NDAs_2025.zip',type:'file',icon:'🗜',size:'18.2 MB',mb:18.2,sensitive:true},
+      {name:'Compliance_Checklist.docx',type:'file',icon:'📝',size:'0.8 MB',mb:0.8},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Executive:{
+    '/home/':[
+      {name:'Strategy',type:'folder',icon:'📂'},
+      {name:'Board',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Travel_Schedule_Q2.xlsx',type:'file',icon:'📊',size:'0.8 MB',mb:0.8},
+    ],
+    '/home/Strategy/':[
+      {name:'Strategic_Plan_2025.pdf',type:'file',icon:'📄',size:'5.1 MB',mb:5.1,sensitive:true},
+      {name:'M&A_Targets.xlsx',type:'file',icon:'📊',size:'8.3 MB',mb:8.3,sensitive:true},
+      {name:'Investor_Data.xlsx',type:'file',icon:'📊',size:'10.2 MB',mb:10.2,sensitive:true},
+    ],
+    '/home/Board/':[
+      {name:'Board_Minutes_Q1.docx',type:'file',icon:'📝',size:'2.1 MB',mb:2.1,sensitive:true},
+      {name:'Board_Agenda_Q2.docx',type:'file',icon:'📝',size:'0.9 MB',mb:0.9},
+      {name:'Executive_Compensation.xlsx',type:'file',icon:'📊',size:'4.5 MB',mb:4.5,sensitive:true},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Marketing:{
+    '/home/':[
+      {name:'Campaigns',type:'folder',icon:'📂'},
+      {name:'Brand_Assets',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Social_Media_Calendar.xlsx',type:'file',icon:'📊',size:'1.8 MB',mb:1.8},
+    ],
+    '/home/Campaigns/':[
+      {name:'Campaign_Results_Q1.xlsx',type:'file',icon:'📊',size:'5.6 MB',mb:5.6},
+      {name:'Q2_Campaign_Brief.docx',type:'file',icon:'📝',size:'2.1 MB',mb:2.1},
+      {name:'Customer_Segments.xlsx',type:'file',icon:'📊',size:'12.4 MB',mb:12.4,sensitive:true},
+    ],
+    '/home/Brand_Assets/':[
+      {name:'Brand_Assets_2025.zip',type:'file',icon:'🗜',size:'180 MB',mb:180},
+      {name:'Logo_Pack.zip',type:'file',icon:'🗜',size:'45 MB',mb:45},
+      {name:'Brand_Guidelines.pdf',type:'file',icon:'📄',size:'8.2 MB',mb:8.2},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+  Operations:{
+    '/home/':[
+      {name:'Vendors',type:'folder',icon:'📂'},
+      {name:'Projects',type:'folder',icon:'📂'},
+      {name:'Personal',type:'folder',icon:'📂'},
+      {name:'Facilities_Schedule.xlsx',type:'file',icon:'📊',size:'1.4 MB',mb:1.4},
+    ],
+    '/home/Vendors/':[
+      {name:'Vendor_Contracts.zip',type:'file',icon:'🗜',size:'42.1 MB',mb:42.1,sensitive:true},
+      {name:'Asset_Register.xlsx',type:'file',icon:'📊',size:'7.2 MB',mb:7.2},
+      {name:'Supplier_List.xlsx',type:'file',icon:'📊',size:'3.8 MB',mb:3.8},
+    ],
+    '/home/Projects/':[
+      {name:'Project_Plans_2025.xlsx',type:'file',icon:'📊',size:'9.4 MB',mb:9.4},
+      {name:'Resource_Allocation.xlsx',type:'file',icon:'📊',size:'4.1 MB',mb:4.1},
+      {name:'Risk_Register.xlsx',type:'file',icon:'📊',size:'2.3 MB',mb:2.3},
+    ],
+    '/home/Personal/':[
+      {name:'Notes.txt',type:'file',icon:'📝',size:'0.01 MB',mb:0.01},
+      {name:'CV_Draft.docx',type:'file',icon:'📝',size:'0.2 MB',mb:0.2},
+    ],
+  },
+};
+DEPT_FS_TEMPLATES.General=DEPT_FS_TEMPLATES.Operations;
+
+// Per-user state (loaded from localStorage on login)
+let currentFS={}, currentEmails=[], currentUSBInserted=false, currentUSBFiles=[], currentBrowserHistory=[];
+
+// ══════════════════════════════════════════════════════
+//  EMAIL DATA
+// ══════════════════════════════════════════════════════
+const INBOX_TEMPLATES=[
+  {from:'hr@nexon.com',     subject:'Q2 Performance Reviews — Action Required',  preview:'Please complete your team performance reviews by Friday…', body:'Hi Team,\n\nQ2 performance reviews are due this Friday. Please log into the HR portal and complete your reviews.\n\nFor any questions contact HR directly.\n\nRegards,\nHR Team', external:false, attachMB:0.3, label:'work'},
+  {from:'it@nexon.com',     subject:'System Maintenance — 22:00 Tonight',         preview:'Planned maintenance window for all services tonight at 22:00…', body:'Dear All,\n\nWe will be performing scheduled maintenance tonight from 22:00-01:00.\n\nAll non-essential services will be unavailable during this window.\n\nIT Operations', external:false, attachMB:0, label:'work'},
+  {from:'ceo@nexon.com',    subject:'Company All-Hands — Thursday 3pm',           preview:'Please join us for our quarterly all-hands meeting on Thursday…', body:'Team,\n\nPlease join me for our Q2 all-hands this Thursday at 3pm in the main conference room.\n\nAgenda:\n- Q2 results\n- H2 strategy\n- Team recognition\n\nRobert Anderson\nCEO, Nexon Technologies', external:false, attachMB:0.1, label:'work'},
+  {from:'vendor@cloudprovider.com', subject:'Invoice #INV-2025-0421 — Cloud Services', preview:'Please find attached your monthly cloud services invoice…', body:'Dear Nexon Technologies,\n\nPlease find attached your invoice for cloud services for April 2025.\n\nTotal: $14,250.00\nDue: 30 May 2025\n\nCloud Provider Inc.', external:true, attachMB:0.5, label:'external'},
+  {from:'finance@nexon.com',subject:'Budget Reforecast — Input Needed',           preview:'Department heads: please provide your Q3 budget estimates…', body:'Hi,\n\nWe need updated Q3 budget estimates from all department heads by EOD Wednesday.\n\nPlease complete the attached spreadsheet and return to finance.\n\nFinance Team', external:false, attachMB:1.2, label:'work'},
+  {from:'recruiter@nexon.com',subject:'New Hire Starting Monday — James Wong',   preview:'Please welcome James Wong joining the Engineering team…', body:'Team,\n\nWe are pleased to announce James Wong will be joining the Engineering team as a Backend Developer this Monday.\n\nPlease give him a warm welcome!\n\nRecruiting', external:false, attachMB:0, label:'work'},
+  {from:'client@bigcorp.com',subject:'Re: Proposal for Q3 Integration Project',  preview:'Thank you for the detailed proposal. We would like to schedule a call…', body:'Hi,\n\nThank you for the detailed proposal submitted last week.\n\nWe\'d like to schedule a call to discuss the technical requirements further. Are you available Thursday morning?\n\nBest regards,\nBigCorp Procurement', external:true, attachMB:0.2, label:'external'},
+  {from:'security@nexon.com',subject:'Security Awareness Training — Mandatory',   preview:'All staff must complete the 2025 security awareness module by May 15…', body:'Important Notice,\n\nAll staff are required to complete the 2025 Security Awareness Training by 15 May.\n\nLink: https://training.nexon.internal/security-2025\n\nNon-completion will be escalated to your manager.\n\nIT Security', external:false, attachMB:0, label:'work'},
+];
+
+// ══════════════════════════════════════════════════════
+//  BROWSER BOOKMARKS
+// ══════════════════════════════════════════════════════
+const BOOKMARKS=[
+  {icon:'🏠',label:'Company Intranet',    domain:'intranet.nexon.internal',    category:'general',   risk:'safe',     bytes:5000,  page:'intranet'},
+  {icon:'📬',label:'Webmail',             domain:'mail.nexon.internal',         category:'general',   risk:'safe',     bytes:3000,  page:'mail'},
+  {icon:'📊',label:'BI Dashboard',        domain:'analytics.nexon.internal',    category:'general',   risk:'safe',     bytes:8000,  page:'analytics'},
+  {icon:'🎫',label:'JIRA / Tasks',        domain:'jira.nexon.internal',         category:'general',   risk:'safe',     bytes:6000,  page:'jira'},
+  {icon:'📚',label:'Confluence Docs',     domain:'confluence.nexon.internal',   category:'general',   risk:'safe',     bytes:4500,  page:'confluence'},
+  {icon:'📦',label:'GitHub Enterprise',   domain:'github.nexon.internal',       category:'general',   risk:'safe',     bytes:12000, page:'github'},
+  {icon:'☁️', label:'Google Drive',        domain:'drive.google.com',            category:'cloud_storage',risk:'suspicious',bytes:45000,page:'gdrive'},
+  {icon:'💾',label:'WeTransfer',           domain:'wetransfer.com',              category:'file_sharing',risk:'suspicious',bytes:80000,page:'wetransfer'},
+  {icon:'💬',label:'LinkedIn',            domain:'linkedin.com',                category:'social',    risk:'suspicious',bytes:25000, page:'linkedin'},
+  {icon:'🌑',label:'Tor Browser',         domain:'onion.network',               category:'tor',       risk:'risky',    bytes:2000,  page:'tor'},
+  {icon:'🔐',label:'ProtonMail',          domain:'protonmail.com',              category:'file_sharing',risk:'suspicious',bytes:10000,page:'protonmail'},
+  {icon:'📤',label:'Mega.nz Upload',      domain:'mega.nz',                     category:'cloud_storage',risk:'risky',bytes:120000,page:'mega'},
+];
+
+const PAGES={
+  intranet:{icon:'🏠',name:'Nexon Technologies Intranet',url:'intranet.nexon.internal',body:'Welcome to the Nexon Technologies corporate intranet.\n\n📢 Latest News\n• Q2 All-Hands Meeting — Thursday 3pm Main Conference Room\n• New expense policy effective 1 May\n• Parking allocation changes from next week\n\n🔗 Quick Links\n• HR Portal  •  IT Help Desk  •  Finance Portal  •  Facilities'},
+  mail:{icon:'📬',name:'Nexon Webmail',url:'mail.nexon.internal',body:'Nexon Webmail — use the desktop Email app for a better experience.'},
+  analytics:{icon:'📊',name:'BI Analytics Dashboard',url:'analytics.nexon.internal',body:'Q2 2025 Business Intelligence Dashboard\n\nRevenue YTD: £4.2M (+12% vs Q2 2024)\nActive clients: 47\nPipeline: £8.9M\n\n[Charts would appear here in a real deployment]'},
+  jira:{icon:'🎫',name:'JIRA Project Management',url:'jira.nexon.internal',body:'JIRA — Sprint Board\n\n🟢 TODO (12)\n🟡 IN PROGRESS (7)\n✅ DONE (34)\n\n[Task boards would render here]'},
+  confluence:{icon:'📚',name:'Confluence Documentation',url:'confluence.nexon.internal',body:'Confluence Knowledge Base\n\n📂 Engineering\n📂 Product\n📂 Finance & Legal\n📂 HR Policies\n📂 IT & Security\n\n[Page contents would render here]'},
+  github:{icon:'📦',name:'GitHub Enterprise',url:'github.nexon.internal',body:'GitHub Enterprise — Nexon Technologies\n\n📦 nexon/platform-core        — 3 open PRs\n📦 nexon/analytics-service   — 1 open PR\n📦 nexon/mobile-app          — 7 open PRs\n\n[Repository contents would render here]'},
+  gdrive:{icon:'☁️',name:'Google Drive',url:'drive.google.com',body:'Google Drive — Personal Cloud Storage\n\nWarning: This is an external cloud storage service. File transfers to personal cloud storage are monitored by InsightGuard.\n\n[Drive file list would appear here]'},
+  wetransfer:{icon:'💾',name:'WeTransfer',url:'wetransfer.com',body:'WeTransfer — File Sharing Service\n\nThis is an external file sharing service. Large file uploads to external services are flagged by the security system.\n\n[Upload interface would appear here]'},
+  linkedin:{icon:'💬',name:'LinkedIn',url:'linkedin.com',body:'LinkedIn — Professional Network\n\n[LinkedIn feed would appear here]\n\nNote: Personal social network usage is logged during work hours.'},
+  tor:{icon:'🌑',name:'Tor Network',url:'onion.network',body:'⚠️ WARNING: Tor anonymous network\n\nAccessing the Tor network is a critical security violation. This activity has been flagged and logged by InsightGuard.\n\nThis access has been reported to the security team.'},
+  protonmail:{icon:'🔐',name:'ProtonMail',url:'protonmail.com',body:'ProtonMail — Encrypted Email\n\nUsing encrypted external email services for work communications is flagged as suspicious.\n\n[ProtonMail would appear here]'},
+  mega:{icon:'📤',name:'Mega.nz',url:'mega.nz',body:'Mega.nz — Encrypted Cloud Storage\n\n⚠️ This is a high-risk file sharing service. Uploading company data to Mega.nz will trigger an InsightGuard alert.\n\n[Upload interface would appear here]'},
+};
+
+// ══════════════════════════════════════════════════════
+//  DEPT EMAIL TEMPLATES
+// ══════════════════════════════════════════════════════
+const SHARED_EMAILS=[
+  {from:'hr@nexon.com',     subject:'Q2 Performance Reviews — Action Required',  preview:'Please complete your team performance reviews by Friday…', body:'Hi Team,\n\nQ2 performance reviews are due this Friday. Please log into the HR portal.\n\nRegards, HR Team', external:false, attachMB:0.3},
+  {from:'it@nexon.com',     subject:'System Maintenance — 22:00 Tonight',        preview:'Planned maintenance window tonight at 22:00…', body:'Dear All,\n\nScheduled maintenance tonight from 22:00-01:00.\n\nIT Operations', external:false, attachMB:0},
+  {from:'ceo@nexon.com',    subject:'Company All-Hands — Thursday 3pm',          preview:'Please join us for our quarterly all-hands…', body:'Team,\n\nPlease join me for our Q2 all-hands this Thursday at 3pm.\n\nRobert Anderson, CEO', external:false, attachMB:0.1},
+  {from:'security@nexon.com',subject:'Security Awareness Training — Mandatory',  preview:'All staff must complete training by May 15…', body:'Important: All staff must complete 2025 Security Awareness Training by 15 May.\n\nIT Security', external:false, attachMB:0},
+];
+const DEPT_EMAIL_TEMPLATES={
+  Finance:[
+    {from:'audit@kpmg.com', subject:'External Audit — Document Request', preview:'Please provide the following financial documents for our Q2 audit…', body:'Dear Finance Team,\n\nAs part of our Q2 audit, we require:\n- Full general ledger export\n- Bank reconciliation statements (Jan-Mar)\n- Payroll records for all staff\n\nPlease send to audit@kpmg.com by Friday.\n\nKPMG Audit Services', external:true, attachMB:0.2},
+    {from:'cfo@nexon.com',  subject:'URGENT: Budget Variance Q1 — Action Required', preview:'Q1 actuals show a 12% variance against budget…', body:'Team,\n\nQ1 actuals show a 12% variance. I need full analysis by Monday.\n\nJennifer Williams, CFO', external:false, attachMB:1.5},
+    {from:'vendor@payrollpro.com', subject:'Payroll Processing — April Run Complete', preview:'April payroll has been processed. Total: £2,847,320…', body:'Dear Nexon Payroll Team,\n\nApril payroll run complete.\nTotal employees: 55\nGross payroll: £2,847,320\n\nPayroll Pro Services', external:true, attachMB:0.8},
+  ],
+  HR:[
+    {from:'legal@nexon.com', subject:'Employee Termination — Confidential', preview:'Please prepare the necessary documentation…', body:'Dear HR,\n\nPlease prepare termination documentation for EMP-2847.\nEffective date: 30 April 2025.\nReason: Gross misconduct.\n\nConfidential.\n\nLegal Team', external:false, attachMB:0.5},
+    {from:'recruiter@linkedin.com', subject:'New Applicants — Senior Developer Role', preview:'17 new applicants have applied…', body:'Hi,\n\n17 candidates have applied to your Senior Developer role.\n\nTop matches:\n- Sarah Park (95%)\n- James Liu (92%)\n- Maria Costa (88%)\n\nLinkedIn Recruiter', external:true, attachMB:0.2},
+    {from:'pension@provider.com', subject:'Q1 Pension Contributions — Confirmation', preview:'Confirming Q1 pension contributions for all enrolled employees…', body:'Dear HR Team,\n\nQ1 pension contributions processed:\nEmployees enrolled: 48\nTotal contributions: £268,350\n\nNexon Pension Provider', external:true, attachMB:1.2},
+  ],
+  Engineering:[
+    {from:'devops@nexon.com', subject:'Production Deploy FAILED — nexon/platform-core', preview:'Build #847 failed at deployment stage. Rollback initiated…', body:'ALERT: Production deployment failed.\n\nRepository: nexon/platform-core\nBuild: #847\nError: 3/10 instances unhealthy\n\nRollback initiated.\n\nDevOps Automation', external:false, attachMB:0.3},
+    {from:'security@nexon.com', subject:'CRITICAL: Dependency Vulnerability — CVE-2025-1234', preview:'A critical vulnerability has been found in a production dependency…', body:'Security Alert,\n\nCritical vulnerability:\nCVE-2025-1234 (CVSS 9.8)\nAffected: log4j-core 2.14.1\n\nPatch required within 24 hours.\n\nIT Security', external:false, attachMB:0.1},
+    {from:'client@bigcorp.com', subject:'API Integration Issue — Production', preview:'We are experiencing failures in your API since this morning…', body:'Hi Engineering Team,\n\nSince 09:30 we are seeing 503 errors from your API.\nEndpoint: POST /api/v2/transactions\nError rate: 34%\n\nBigCorp Integration Team', external:true, attachMB:0.5},
+  ],
+  IT:[
+    {from:'soc@nexon.com', subject:'ALERT: Multiple Failed Login Attempts — admin account', preview:'InsightGuard has detected 8 failed logins to the admin account…', body:'Security Alert,\n\nMultiple failed logins:\nAccount: administrator@nexon.com\nFailed attempts: 8\nSource IP: 185.220.101.47 (Tor exit node)\n\nAccount temporarily locked.\n\nSOC Team', external:false, attachMB:0},
+    {from:'vendor@server.com', subject:'Hardware Warranty Expiry — 12 Servers', preview:'The following servers will have warranty expiry in the next 30 days…', body:'Dear IT Team,\n\nWarranty expiring in 30 days:\n- prod-app-01 through prod-app-04\n- prod-db-01, prod-db-02\n- 6 additional servers\n\nServer Solutions Ltd', external:true, attachMB:0.4},
+  ],
+  Sales:[
+    {from:'crm@salesforce.com', subject:'Pipeline Alert: 3 Deals Closing This Week', preview:'You have 3 deals in final negotiation expected to close by Friday…', body:'Sales Alert,\n\nDeals closing this week:\n1. BigCorp — £340,000 (90%)\n2. TechStart Ltd — £85,000 (75%)\n3. Global Retail Co — £210,000 (85%)\n\nSalesforce CRM', external:true, attachMB:0.1},
+    {from:'legal@nexon.com', subject:'Contract Review Required — GlobalCorp MSA', preview:'The GlobalCorp MSA requires your sign-off before…', body:'Hi Sales Team,\n\nGlobalCorp MSA ready for review.\nContract value: £1.2M over 3 years\n\nNeeds your sign-off by Thursday.\n\nLegal Team', external:false, attachMB:2.1},
+  ],
+  Legal:[
+    {from:'court@hmcts.gov.uk', subject:'Case Ref: HC-2025-04821 — Response Required', preview:'The High Court requires your response by…', body:'Dear Nexon Technologies Legal,\n\nCase Reference: HC-2025-04821\nClaimant: DataBreach Victims Group\n\nFile your defence by 30 April 2025.\n\nHM Courts & Tribunals Service', external:true, attachMB:1.8},
+    {from:'ico@information-commissioner.org.uk', subject:'Data Protection Inquiry — Reference ICO-2025-0482', preview:'The ICO has opened an inquiry into a reported data incident…', body:'Dear Nexon Technologies,\n\nWe have opened an inquiry following a complaint on 3 April 2025.\n\nPlease provide your DPIA within 14 days.\n\nICO', external:true, attachMB:0.5},
+  ],
+  Executive:[
+    {from:'investor@vccapital.com', subject:'Board Update Request — Q1 Financials', preview:'As per our investor agreement, we request the Q1 financial summary…', body:'Dear Board,\n\nPer our shareholder agreement, please provide Q1 financials.\n\nVC Capital Partners', external:true, attachMB:0},
+    {from:'manda@advisory.com', subject:'CONFIDENTIAL: Acquisition Target — Preliminary Analysis', preview:'Preliminary analysis of the identified target attached…', body:'Dear Robert,\n\nPreliminary analysis attached:\n- Revenue: £8.2M ARR\n- Team: 47 FTE\n- Valuation: £45-65M\n\nRecommend proceeding to NDA stage.\n\nM&A Advisory', external:true, attachMB:3.2},
+  ],
+  Marketing:[
+    {from:'google@ads.google.com', subject:'Campaign Performance — April Week 2', preview:'Your Google Ads campaigns delivered 2.4M impressions this week…', body:'Campaign Summary — Week of 7 April 2025\n\nImpressions: 2,400,000\nClicks: 18,450\nConversions: 312\nCost: £8,920\n\nGoogle Ads', external:true, attachMB:0.2},
+    {from:'pr@prfirm.com', subject:'Press Coverage — Nexon Named in Top 50 Tech Firms', preview:'We have secured coverage in TechCrunch, Forbes and The Guardian…', body:'Great news!\n\nNexon Technologies featured in:\n- TechCrunch: Top 50 UK Tech Firms 2025\n- Forbes: Companies to Watch\n- The Guardian: Tech Supplement\n\nYour PR Team', external:true, attachMB:1.5},
+  ],
+  Operations:[
+    {from:'vendor@facilities.com', subject:'Office Lease Renewal — Action Required', preview:'Your current lease expires 30 June 2025…', body:'Dear Operations Team,\n\nOffice lease at 100 Tech Street expires 30 June 2025.\nRenewal: 3-year term, £180,000 p.a.\n\nConfirmation required by 30 April.\n\nFacilities Management', external:true, attachMB:0.8},
+    {from:'pm@nexon.com', subject:'Project Status — Q2 Infrastructure Upgrade', preview:'Phase 2 of the infrastructure upgrade is 3 days behind schedule…', body:'Team,\n\nQ2 Infrastructure Upgrade:\nPhase 1: Complete ✅\nPhase 2: 3 days behind ⚠️\nPhase 3: On track ✅\n\nProject Management', external:false, attachMB:0.3},
+  ],
+};
+DEPT_EMAIL_TEMPLATES.General=[];
+
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+let emp=null, currentPath='/home/', selectedFiles=new Set();
+let currentFolder='inbox';
+let pollInt=null;
+
+function apiBase(){return window.location.origin;}
+
+// ══════════════════════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════════════════════
+function doLogin(){
+  const u=document.getElementById('lu').value.trim().toLowerCase();
+  const p=document.getElementById('lp').value;
+  const found=EMPLOYEES.find(e=>e.id===u&&e.pass===p);
+  const err=document.getElementById('lerr');
+  if(!found){err.style.display='block';['lu','lp'].forEach(id=>document.getElementById(id).classList.add('err'));return;}
+  err.style.display='none';['lu','lp'].forEach(id=>document.getElementById(id).classList.remove('err'));
+  emp=found;
+  sessionStorage.setItem('nc_user',emp.id);
+  showApp();
+}
+function doLogout(){
+  saveUserState();
+  sessionStorage.removeItem('nc_user');emp=null;
+  currentFS={};currentEmails=[];currentUSBInserted=false;currentUSBFiles=[];currentBrowserHistory=[];
+  currentPath='/home/';currentFolder='inbox';
+  if(pollInt){clearInterval(pollInt);pollInt=null;}
+  document.getElementById('app').style.display='none';
+  document.getElementById('loginPage').style.display='flex';
+}
+['lu','lp'].forEach(id=>{
+  document.getElementById(id)?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+});
+
+// ══════════════════════════════════════════════════════
+//  SHOW APP
+// ══════════════════════════════════════════════════════
+const DEPT_GRADS={Engineering:'linear-gradient(135deg,#58a6ff,#1f6feb)',Finance:'linear-gradient(135deg,#3fb950,#238636)',HR:'linear-gradient(135deg,#d2a8ff,#8957e5)',IT:'linear-gradient(135deg,#f0883e,#bd561d)',Sales:'linear-gradient(135deg,#ffa657,#d8711a)',Marketing:'linear-gradient(135deg,#ff7b72,#b62324)',Legal:'linear-gradient(135deg,#79c0ff,#0969da)',Executive:'linear-gradient(135deg,#f8e3a1,#c69026)',Operations:'linear-gradient(135deg,#56d364,#1a7f37)'};
+function showApp(){
+  document.getElementById('loginPage').style.display='none';
+  document.getElementById('app').style.display='flex';
+  const ini=emp.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const grad=DEPT_GRADS[emp.dept]||DEPT_GRADS.Engineering;
+  document.getElementById('tbAv').style.background=grad;
+  document.getElementById('tbAv').textContent=ini;
+  document.getElementById('tbName').textContent=emp.name;
+  document.getElementById('tbDept').textContent=emp.dept+' · '+emp.role;
+  // Home panel
+  const hr=new Date().getHours();
+  document.getElementById('homeGreeting').textContent=(hr<12?'Good morning':hr<17?'Good afternoon':'Good evening')+', '+emp.name.split(' ')[0];
+  document.getElementById('homeDate').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  // Announcements
+  const ann=document.getElementById('announcements');
+  ['Q2 All-Hands — Thursday 3pm | Main Conference Room','Security Training mandatory by 15 May | IT Security','New WFH policy effective 1 June | HR'].forEach(a=>{
+    const d=document.createElement('div');
+    d.style.cssText='padding:8px 12px;background:var(--card);border-radius:var(--r);font-size:12px;color:var(--text-secondary);border-left:3px solid var(--blue)';
+    d.textContent=a;ann.appendChild(d);
+  });
+  currentPath='/home/';
+  loadUserState(emp);
+  const unread=currentEmails.filter(e=>e.unread&&e.folder==='inbox').length;
+  document.getElementById('homeUnreadCount').textContent=unread+' unread messages';
+  document.getElementById('inboxCount').textContent=unread;
+  renderFiles(); renderEmailList(); browserHome();
+  if(pollInt)clearInterval(pollInt);
+  pollInt=setInterval(()=>pollRisk(emp.id),5000);
+  pollRisk(emp.id);
+  // Send login event
+  fireEvent({source:'login',event:'login',country_code:'US',device_id:'ws-'+emp.id,failed_attempts:0,vpn:false,tor:false,new_device:false},'Logged In');
+}
+
+// ══════════════════════════════════════════════════════
+//  PANEL SWITCHING
+// ══════════════════════════════════════════════════════
+function switchPanel(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');
+  document.querySelectorAll('.app-tab').forEach(t=>t.classList.toggle('active',t.dataset.panel===name));
+}
+
+// ══════════════════════════════════════════════════════
+//  FILE MANAGER
+// ══════════════════════════════════════════════════════
+function renderFiles(){
+  const container=document.getElementById('fileContainer');
+  const entries=currentFS[currentPath]||[];
+  document.getElementById('pathBar').textContent=currentPath;
+  selectedFiles.clear();
+  document.getElementById('fileActions').style.display='none';
+  const mode=document.getElementById('viewMode').value;
+  if(mode==='grid'){
+    container.innerHTML='<div class="file-grid" id="fg"></div>';
+    const fg=document.getElementById('fg');
+    entries.forEach(f=>{
+      const el=document.createElement('div');
+      el.className='file-item';
+      el.innerHTML=`<div class="file-icon">${f.icon}</div><div class="file-name">${f.name}</div><div class="file-size">${f.size||''}</div>`;
+      el.onclick=()=>handleFileClick(f,el);
+      el.ondblclick=()=>handleFileDblClick(f);
+      fg.appendChild(el);
+    });
+  } else {
+    container.innerHTML='<div class="file-list" id="fl"></div>';
+    const fl=document.getElementById('fl');
+    entries.forEach(f=>{
+      const el=document.createElement('div');
+      el.className='file-row';
+      el.innerHTML=`<span class="fr-icon">${f.icon}</span><span class="fr-name">${f.name}</span><span class="fr-size">${f.size||''}</span><span class="fr-date">${f.type==='folder'?'—':new Date(Date.now()-Math.random()*86400000*30).toLocaleDateString('en-GB')}</span>`;
+      el.onclick=()=>handleFileClick(f,el);
+      el.ondblclick=()=>handleFileDblClick(f);
+      fl.appendChild(el);
+    });
+  }
+}
+function handleFileClick(f,el){
+  if(f.type==='folder'){handleFileDblClick(f);return;}
+  el.classList.toggle('selected');
+  if(el.classList.contains('selected'))selectedFiles.add(f);else selectedFiles.delete(f);
+  document.getElementById('fileActions').style.display=selectedFiles.size>0?'flex':'none';
+  document.getElementById('selectedCount').textContent=selectedFiles.size+' selected';
+}
+function handleFileDblClick(f){
+  if(f.type==='folder'){fileNav(f.name);}
+  else{openFiles();}
+}
+function fileNav(name){
+  if(name==='up'){
+    const parts=currentPath.replace(/\/$/,'').split('/');
+    parts.pop();
+    currentPath=(parts.join('/')||'/')+'/';
+  } else {
+    currentPath=currentPath+name+'/';
+  }
+  renderFiles();
+}
+function openFiles(){
+  const files=[...selectedFiles];
+  if(!files.length)return;
+  const totalMB=files.reduce((a,f)=>a+(f.mb||0),0);
+  const cnt=files.length;
+  fireEvent({source:'file',file_path:currentPath,operation:'read',file_count:cnt,data_mb:totalMB,destination:'local'},'Opened '+cnt+' file(s)');
+  toast('Files opened',files.map(f=>f.name).join(', '),'success');
+  selectedFiles.clear();renderFiles();
+}
+function copyFiles(){
+  const files=[...selectedFiles];
+  if(!files.length)return;
+  const totalMB=files.reduce((a,f)=>a+(f.mb||0),0);
+  fireEvent({source:'file',file_path:currentPath,operation:'copy',file_count:files.length,data_mb:totalMB,destination:'local'},'Copied '+files.length+' file(s)');
+  toast('Files copied','Copied to clipboard: '+files.map(f=>f.name).join(', '),'success');
+  selectedFiles.clear();renderFiles();
+}
+function saveToUSB(){
+  const files=[...selectedFiles];if(!files.length)return;
+  if(!currentUSBInserted){toast('No USB','Please insert a USB drive first','warning');return;}
+  const totalMB=files.reduce((a,f)=>a+(f.mb||0),0);
+  fireEvent({source:'usb',device_id:'usb-sandisk-001',operation:'transfer',data_mb:totalMB},'USB Transfer: '+files.length+' files');
+  fireEvent({source:'file',file_path:currentPath,operation:'copy',file_count:files.length,data_mb:totalMB,destination:'usb'},'Files to USB');
+  toast('USB Transfer','Transferring '+files.length+' files ('+totalMB.toFixed(1)+' MB) to USB drive','warning');
+  selectedFiles.clear();renderFiles();
+}
+function deleteFiles(){
+  const files=[...selectedFiles];if(!files.length)return;
+  fireEvent({source:'file',file_path:currentPath,operation:'delete',file_count:files.length,data_mb:0,destination:'local'},'Deleted '+files.length+' file(s)');
+  toast('Files deleted',files.map(f=>f.name).join(', '),'info');
+  selectedFiles.clear();renderFiles();
+}
+function downloadFiles(){
+  const files=[...selectedFiles];
+  if(!files.length)return;
+  files.forEach(f=>{
+    if(f.type==='folder')return;
+    const url=apiBase()+'/api/files/download?name='+encodeURIComponent(f.name)+'&dept='+encodeURIComponent(emp.dept);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=f.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    fireEvent({source:'file',file_path:currentPath+f.name,operation:'download',file_count:1,data_mb:f.mb||0,destination:'external'},'Downloaded: '+f.name);
+  });
+  toast('Download started',files.length+' file(s) downloading','success');
+  selectedFiles.clear();renderFiles();
+}
+
+// ══════════════════════════════════════════════════════
+//  EMAIL
+// ══════════════════════════════════════════════════════
+function renderEmailList(){
+  const list=document.getElementById('emailList');
+  list.innerHTML='';
+  const toShow=currentEmails.filter(e=>e.folder===currentFolder);
+  if(!toShow.length){list.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No messages</div>';return;}
+  toShow.forEach(e=>{
+    const el=document.createElement('div');
+    el.className='email-item'+(e.unread?' unread':'');
+    el.dataset.id=e.id;
+    el.innerHTML=`
+      <div class="ei-row"><span class="ei-sender">${e.from}</span><span class="ei-time">${e.date}</span></div>
+      <div class="ei-subject">${e.subject}</div>
+      <div class="ei-preview">${e.preview}</div>`;
+    el.onclick=()=>readEmail(e,el);
+    list.appendChild(el);
+  });
+}
+function readEmail(e,el){
+  // mark read
+  currentEmails=currentEmails.map(em=>em.id===e.id?{...em,unread:false}:em); saveUserState();
+  document.querySelectorAll('#emailList .email-item').forEach(i=>i.classList.remove('selected'));
+  el.classList.add('selected');
+  el.classList.remove('unread');
+  el.querySelector('.ei-subject').style.fontWeight='';
+  const view=document.getElementById('emailView');
+  view.innerHTML=`
+    <div class="ev-hdr">
+      <div class="ev-subject">${e.subject}</div>
+      <div class="ev-meta">
+        <span>From: <strong>${e.from}</strong></span>
+        <span>To: ${emp.id}@nexon.com</span>
+        <span>${e.date}</span>
+        ${e.external?'<span style="color:var(--amber)">⚠️ External sender</span>':''}
+      </div>
+    </div>
+    <div class="ev-body" style="margin-top:14px">${e.body}</div>
+    ${e.attachMB>0?`<div class="ev-attachment" onclick="downloadAttachment(${e.attachMB})">📎 Attachment.pdf &nbsp;(${e.attachMB} MB)</div>`:''}
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="openCompose('${e.from}','Re: ${e.subject}')">Reply</button>
+      <button class="btn btn-ghost" onclick="openCompose('','Fwd: ${e.subject}')">Forward</button>
+    </div>
+  `;
+  // Record email open
+  fireEvent({source:'email',direction:'received',recipient_count:1,attachment_count:e.attachMB>0?1:0,attachment_mb:e.attachMB||0,external:e.external||false},'Read email: '+e.subject.slice(0,40));
+}
+function downloadAttachment(mb){
+  fireEvent({source:'file',file_path:'/email/attachments/',operation:'read',file_count:1,data_mb:mb,destination:'local'},'Downloaded attachment: '+mb+' MB');
+  toast('Attachment downloaded','Saved to downloads folder','success');
+}
+function selectFolder(f,el){
+  currentFolder=f;
+  document.querySelectorAll('.email-sidebar-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active');
+  renderEmailList();
+  document.getElementById('emailView').innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:60px 20px"><div style="font-size:32px;margin-bottom:10px">✉️</div>Select an email</div>';
+}
+function openCompose(to='',subject=''){
+  document.getElementById('cTo').value=to;
+  document.getElementById('cSubject').value=subject;
+  document.getElementById('cBody').value='';
+  document.getElementById('cExternal').checked=to&&!to.includes('@nexon.com')?true:false;
+  document.getElementById('cAttachCount').value=0;
+  document.getElementById('cAttachMB').value=0;
+  document.getElementById('composeModal').classList.add('open');
+}
+function closeCompose(){document.getElementById('composeModal').classList.remove('open');}
+function minimizeCompose(){
+  const b=document.querySelector('.compose-body');const f=document.querySelector('.compose-footer');
+  const hidden=b.style.display==='none';
+  b.style.display=hidden?'flex':'none';f.style.display=hidden?'flex':'none';
+}
+function sendEmail(){
+  const to=document.getElementById('cTo').value.trim();
+  const subject=document.getElementById('cSubject').value.trim();
+  const external=document.getElementById('cExternal').checked;
+  const attachMB=parseFloat(document.getElementById('cAttachMB').value)||0;
+  const attachCount=parseInt(document.getElementById('cAttachCount').value)||0;
+  const recipients=to.split(',').filter(r=>r.trim()).length||1;
+  if(!to){toast('Missing recipient','Please enter a recipient email address','warning');return;}
+  // Fire email event
+  fireEvent({source:'email',direction:'sent',recipient_count:recipients,attachment_count:attachCount,attachment_mb:attachMB,external:external},'Sent email: '+subject.slice(0,40));
+  // Add to sent folder
+  currentEmails.unshift({id:Date.now(),from:emp.id+'@nexon.com',to,subject,
+    preview:document.getElementById('cBody').value.slice(0,80),
+    body:document.getElementById('cBody').value,
+    external,attachMB,attachCount,folder:'sent',unread:false,
+    date:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}); saveUserState();
+  toast('Email sent','Message sent to '+to+(external?' [EXTERNAL]':''),'success');
+  closeCompose();
+  renderEmailList();
+}
+
+// ══════════════════════════════════════════════════════
+//  BROWSER
+// ══════════════════════════════════════════════════════
+function browserHome(){
+  document.getElementById('browserUrl').value='nexon://home';
+  const content=document.getElementById('browserContent');
+  content.innerHTML=`
+    <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em">Bookmarks & Shortcuts</div>
+    <div class="browser-bookmark-grid" id="bmGrid"></div>`;
+  const g=document.getElementById('bmGrid');
+  BOOKMARKS.forEach(b=>{
+    const el=document.createElement('div');
+    el.className='bm-tile';
+    el.innerHTML=`<div class="bm-icon">${b.icon}</div><div class="bm-label">${b.label}</div><div class="bm-domain">${b.domain}</div><span class="bm-risk bm-${b.risk}">${b.risk.toUpperCase()}</span>`;
+    el.onclick=()=>visitSite(b);
+    g.appendChild(el);
+  });
+}
+function visitSite(bm){
+  document.getElementById('browserUrl').value=bm.domain;
+  currentBrowserHistory.push(bm.domain); saveUserState();
+  const risky=(bm.category==='tor'||bm.category==='cloud_storage'||bm.category==='file_sharing');
+  fireEvent({source:'web',url:bm.domain,category:bm.category,bytes_out:bm.bytes,blocked:false},'Browsed: '+bm.domain);
+  const p=PAGES[bm.page]||{icon:bm.icon,name:bm.label,url:bm.domain,body:'Page content would appear here.'};
+  const content=document.getElementById('browserContent');
+  content.innerHTML=`
+    <div class="browser-page">
+      <div class="site-header">
+        <span class="site-icon">${p.icon}</span>
+        <div><div class="site-name">${p.name}</div><div class="site-url" style="font-family:var(--mono)">${p.url}</div></div>
+        ${risky?'<span style="margin-left:auto;font-size:12px;color:var(--amber);background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.3);padding:3px 8px;border-radius:6px">⚠️ Flagged Site</span>':''}
+      </div>
+      <div class="site-body">${p.body}</div>
+      ${bm.category==='cloud_storage'||bm.category==='file_sharing'?`
+        <div style="margin-top:12px;padding:12px;background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.3);border-radius:var(--r);font-size:12px;color:var(--amber)">
+          ⚠️ This site is classified as <strong>${bm.category.replace('_',' ')}</strong>. Access has been logged.
+          <button class="btn" style="margin-left:8px;padding:4px 10px;background:rgba(227,179,65,.15);color:var(--amber);border:1px solid rgba(227,179,65,.3);font-size:11px" onclick="uploadToCloud('${bm.domain}',${bm.bytes})">Upload Files Here</button>
+        </div>`:''}
+      ${bm.category==='tor'?`<div style="margin-top:12px;padding:12px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:var(--r);font-size:12px;color:var(--red)">🚨 CRITICAL ALERT: Tor network access has been detected and reported to the security team.</div>`:''}
+    </div>`;
+}
+function navigateTo(url){
+  if(!url.trim())return;
+  const found=BOOKMARKS.find(b=>url.toLowerCase().includes(b.domain.toLowerCase()));
+  if(found){visitSite(found);return;}
+  document.getElementById('browserUrl').value=url;
+  currentBrowserHistory.push(url); saveUserState();
+  const bytes=Math.floor(Math.random()*20000)+1000;
+  fireEvent({source:'web',url:url,category:'general',bytes_out:bytes,blocked:false},'Browsed: '+url);
+  document.getElementById('browserContent').innerHTML=`<div class="browser-page"><div class="site-header"><span class="site-icon">🌐</span><div><div class="site-name">${url}</div></div></div><div class="site-body">Page at ${url} loaded successfully.\n\n[Page content would appear here in a real browser]</div></div>`;
+}
+function browserBack(){
+  if(currentBrowserHistory.length>1){currentBrowserHistory.pop();const prev=currentBrowserHistory[currentBrowserHistory.length-1];navigateTo(prev);}
+  else browserHome();
+}
+function uploadToCloud(domain,bytes){
+  const uploadMB=Math.floor(Math.random()*200)+50;
+  fireEvent({source:'web',url:domain,category:'cloud_storage',bytes_out:uploadMB*1024,blocked:false},'Cloud Upload: '+uploadMB+' MB to '+domain);
+  toast('Upload started','Uploading '+uploadMB+' MB to '+domain,'warning');
+}
+
+// ══════════════════════════════════════════════════════
+//  USB
+// ══════════════════════════════════════════════════════
+function insertUSB(){
+  currentUSBInserted=true; saveUserState();
+  document.getElementById('usbInsertBtn').textContent='🔌 USB Connected';
+  document.getElementById('usbInsertBtn').disabled=true;
+  document.getElementById('usbNoDevice').style.display='none';
+  document.getElementById('usbTransferPanel').style.display='block';
+  renderUSBSlots();
+  buildUSBFileSelect();
+  fireEvent({source:'login',event:'login',country_code:'US',device_id:'usb-sandisk-001',failed_attempts:0,vpn:false,tor:false,new_device:true},'USB Device Inserted');
+  toast('USB Drive connected','SanDisk Ultra USB 3.0 (256GB) inserted','info');
+}
+function renderUSBSlots(){
+  const s=document.getElementById('usbSlots');
+  s.innerHTML=`
+    <div class="usb-slot">
+      <span class="usb-icon-big">🔌</span>
+      <div class="usb-info">
+        <div class="usb-name">SanDisk Ultra 256GB</div>
+        <div class="usb-status">Connected · USB 3.0 · 210 GB free</div>
+        <div class="usb-progress" id="usbProgress"><div class="usb-fill" id="usbFill"></div></div>
+      </div>
+      <button class="btn btn-red" onclick="ejectUSB()">Eject</button>
+    </div>`;
+}
+function buildUSBFileSelect(){
+  const panel=document.getElementById('usbFileSelect');
+  panel.innerHTML='';
+  const allFiles=Object.values(currentFS).flat().filter(f=>f.type==='file');
+  allFiles.forEach(f=>{
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:12px';
+    div.innerHTML=`<input type="checkbox" id="usb-${f.name}" onchange="updateUSBSize()"><span>${f.icon}</span><span style="flex:1">${f.name}</span><span style="color:var(--text-muted);font-family:var(--mono)">${f.size||''}</span>`;
+    panel.appendChild(div);
+  });
+}
+function updateUSBSize(){
+  const allFiles=Object.values(currentFS).flat().filter(f=>f.type==='file');
+  let total=0;
+  allFiles.forEach(f=>{
+    const cb=document.getElementById('usb-'+f.name);
+    if(cb&&cb.checked)total+=f.mb||0;
+  });
+  document.getElementById('usbTransferSize').textContent=total>0?total.toFixed(1)+' MB selected':'';
+}
+function doUSBTransfer(){
+  const allFiles=Object.values(currentFS).flat().filter(f=>f.type==='file');
+  const selected=allFiles.filter(f=>{const cb=document.getElementById('usb-'+f.name);return cb&&cb.checked;});
+  if(!selected.length){toast('Nothing selected','Select files to transfer','warning');return;}
+  const totalMB=selected.reduce((a,f)=>a+(f.mb||0),0);
+  // animate
+  const prog=document.getElementById('usbProgress');const fill=document.getElementById('usbFill');
+  if(prog){prog.style.display='block';let w=0;const iv=setInterval(()=>{w+=10;fill.style.width=w+'%';if(w>=100){clearInterval(iv);setTimeout(()=>{prog.style.display='none';fill.style.width='0%';},1000);}},150);}
+  fireEvent({source:'usb',device_id:'usb-sandisk-001',operation:'transfer',data_mb:totalMB},'USB Transfer: '+selected.length+' files');
+  fireEvent({source:'file',file_path:'/company/',operation:'copy',file_count:selected.length,data_mb:totalMB,destination:'usb'},'Files copied to USB');
+  toast('USB Transfer','Copying '+selected.length+' files ('+totalMB.toFixed(1)+' MB) to SanDisk Ultra','warning');
+  saveUserState();
+}
+function ejectUSB(){
+  currentUSBInserted=false; saveUserState();
+  document.getElementById('usbInsertBtn').textContent='🔌 Insert USB Drive';
+  document.getElementById('usbInsertBtn').disabled=false;
+  document.getElementById('usbSlots').innerHTML='';
+  document.getElementById('usbTransferPanel').style.display='none';
+  document.getElementById('usbNoDevice').style.display='block';
+  fireEvent({source:'login',event:'logoff',country_code:'US',device_id:'usb-sandisk-001',failed_attempts:0,vpn:false,tor:false,new_device:false},'USB Device Ejected');
+  toast('USB ejected','SanDisk Ultra safely removed','info');
+}
+
+// ══════════════════════════════════════════════════════
+//  FIRE EVENT TO INSIGHTGUARD
+// ══════════════════════════════════════════════════════
+async function fireEvent(extra, label){
+  if(!emp)return;
+  const payload={
+    user_id:emp.id, timestamp:new Date().toISOString(),
+    department:emp.dept, role:emp.role,
+    ...extra
+  };
+  try{
+    const resp=await fetch(apiBase()+'/api/events',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const data=await resp.json();
+    const sev=data.severity||'normal';
+    if(data.is_anomaly&&sev!=='normal'){
+      const sevMap={suspicious:'⚠️',high_risk:'🔶',critical:'🚨'};
+      toast(sevMap[sev]+' Alert Detected!',`InsightGuard: ${sev.replace('_',' ')} — Score: ${Math.round(data.risk_score||0)}`,sev==='critical'?'danger':'warning');
+    }
+    updateRiskChip(data.risk_score||0, sev);
+  }catch(e){}
+}
+function updateRiskChip(score,sev){
+  const dot=document.getElementById('riskDot');
+  const lbl=document.getElementById('riskLabel');
+  const sc=document.getElementById('riskScore');
+  dot.className='risk-chip-dot'+(sev!=='normal'?' '+sev:'');
+  lbl.textContent={normal:'Normal',suspicious:'Suspicious',high_risk:'High Risk',critical:'CRITICAL'}[sev]||sev;
+  lbl.style.color={normal:'var(--green)',suspicious:'var(--amber)',high_risk:'var(--orange)',critical:'var(--red)'}[sev]||'var(--green)';
+  sc.textContent=Math.round(score);
+}
+async function pollRisk(uid){
+  try{
+    const r=await fetch(apiBase()+'/api/users/'+uid+'/risk');
+    if(!r.ok)return;
+    const d=await r.json();
+    updateRiskChip(d.rolling_score||0,d.risk_level||'normal');
+  }catch(e){}
+}
+// ══════════════════════════════════════════════════════
+//  TOASTS
+// ══════════════════════════════════════════════════════
+function toast(title,msg,type='info'){
+  const icons={success:'✅',warning:'⚠️',danger:'🚨',info:'📡'};
+  const el=document.createElement('div');
+  el.className='toast '+type;
+  el.innerHTML=`<span class="t-icon">${icons[type]||'📡'}</span><div><div class="t-title">${title}</div><div class="t-msg">${msg}</div></div>`;
+  document.getElementById('tc').appendChild(el);
+  setTimeout(()=>{el.style.animation='tout .3s ease forwards';setTimeout(()=>el.remove(),300);},3500);
+}
+
+// ══════════════════════════════════════════════════════
+//  THEME
+// ══════════════════════════════════════════════════════
+function toggleTheme(){
+  const html=document.documentElement;
+  const next=html.getAttribute('data-theme')==='dark'?'light':'dark';
+  html.setAttribute('data-theme',next);localStorage.setItem('nc_theme',next);
+  document.getElementById('themeBtn').textContent=next==='dark'?'🌙':'☀️';
+}
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+window.onload=function(){
+  const t=localStorage.getItem('nc_theme')||'dark';
+  document.documentElement.setAttribute('data-theme',t);
+  document.getElementById('themeBtn').textContent=t==='dark'?'🌙':'☀️';
+  // autocomplete
+  const dl=document.getElementById('empList');
+  EMPLOYEES.forEach(e=>{const o=document.createElement('option');o.value=e.id;dl.appendChild(o);});
+  // restore session
+  const saved=sessionStorage.getItem('nc_user');
+  if(saved){const found=EMPLOYEES.find(e=>e.id===saved);if(found){emp=found;showApp();return;}}
+  document.getElementById('loginPage').style.display='flex';
+};
+</script>
+</body>
+</html>
