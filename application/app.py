@@ -12,7 +12,7 @@ Final score pipeline:
 
 from flask import Flask, request, jsonify, Response, stream_with_context
 from datetime import datetime, timezone
-import json, queue, threading, random, time
+import json, queue, threading, random, time, uuid
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -238,7 +238,6 @@ def _sim(level):
     result = _full_score(fv_dict, user["id"])
     atype  = _EVENT_NAMES.get(fv_dict["event_type_code"],"login")
     uid    = user["id"]
-    import uuid
     lid = str(uuid.uuid4())[:12]
     db.upsert_user(uid, user["dept"], user["role"])
     db.insert_activity_log(lid, uid, _now.isoformat()+"Z", atype, "simulator", details=fv_dict)
@@ -835,7 +834,7 @@ def test_escalation():
 
 @app.get("/api/escalation/log")
 def escalation_log():
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = min(request.args.get("limit", 50, type=int), 200)
     entries = db.get_escalation_log(limit=limit)
     return jsonify({"count": len(entries), "entries": entries}), 200
 
@@ -844,18 +843,17 @@ def escalation_log():
 
 @app.post("/api/investigations")
 def create_investigation():
-    import uuid as _uuid
     body = request.get_json(silent=True) or {}
     user_id = body.get("user_id", "")
     if not user_id:
         return jsonify({"error": "user_id required"}), 400
-    case_id = "case_" + str(_uuid.uuid4())[:8]
+    case_id = "case_" + str(uuid.uuid4())[:8]
     db.create_investigation(
         case_id    = case_id,
         alert_id   = body.get("alert_id", ""),
         user_id    = user_id,
         department = body.get("department", ""),
-        severity   = body.get("severity", "open"),
+        severity   = body.get("severity", ""),
     )
     return jsonify({"case_id": case_id, "status": "open"}), 201
 
@@ -863,10 +861,11 @@ def create_investigation():
 def list_investigations():
     status  = request.args.get("status", "")
     user_id = request.args.get("user_id", "")
-    limit   = min(int(request.args.get("limit", 100)), 200)
+    limit   = request.args.get("limit", 100, type=int)
+    limit   = min(limit, 200)
     cases   = db.list_investigations(status=status, user_id=user_id, limit=limit)
-    open_count = sum(1 for _ in db.list_investigations(status="open", limit=200))
-    return jsonify({"count": len(cases), "open_count": open_count, "cases": cases}), 200
+    open_cases = db.list_investigations(status="open", limit=1000)
+    return jsonify({"count": len(cases), "open_count": len(open_cases), "cases": cases}), 200
 
 @app.get("/api/investigations/<case_id>")
 def get_investigation(case_id):
