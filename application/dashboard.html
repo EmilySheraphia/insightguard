@@ -351,6 +351,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
         <svg class="ni-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15h8v2H8v-2zm0-4h8v2H8v-2z"/></svg>
         Detection Log
       </button>
+      <button class="nav-item" data-section="Investigations" onclick="showSection('Investigations')">
+        <svg class="ni-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+        Investigations
+        <span class="nav-badge" id="invBadge" style="display:none">0</span>
+      </button>
       <button class="nav-item" data-section="Validation" onclick="showSection('Validation')">
         <svg class="ni-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
         Validation
@@ -542,6 +547,56 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
       </div>
     </section>
 
+    <!-- ════ INVESTIGATIONS ════ -->
+    <section class="section" id="sectionInvestigations">
+      <div class="page-hdr" style="border-bottom:1px solid var(--border)">
+        <div>
+          <div class="page-hdr-title">Investigations</div>
+          <div class="page-hdr-sub">Analyst case management — open, track and close threat cases</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <select id="invFilterStatus" onchange="loadInvestigations()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;color:var(--text);font-size:12px;font-family:var(--mono);cursor:pointer">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="under_investigation">Under Investigation</option>
+            <option value="confirmed_threat">Confirmed Threat</option>
+            <option value="false_positive">False Positive</option>
+            <option value="closed">Closed</option>
+          </select>
+          <button onclick="loadInvestigations()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:6px 12px;color:var(--text);font-size:12px;cursor:pointer">Refresh</button>
+        </div>
+      </div>
+      <div style="padding:16px 20px;display:flex;gap:16px;overflow:hidden;height:calc(100% - 61px)">
+        <!-- Case table -->
+        <div style="flex:1;overflow-y:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px" id="invTable">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Case ID</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">User</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Dept</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Severity</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Status</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Opened</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-size:11px;font-family:var(--mono);font-weight:500">Notes Preview</th>
+              </tr>
+            </thead>
+            <tbody id="invTableBody">
+              <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No investigation cases yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Case detail panel -->
+        <div id="invPanel" style="width:320px;flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;overflow-y:auto;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div style="font-family:var(--mono);font-size:13px;font-weight:600" id="invPanelTitle">Case Detail</div>
+            <button onclick="document.getElementById('invPanel').style.display='none'" style="background:transparent;border:none;cursor:pointer;color:var(--text-secondary);font-size:16px">&#10005;</button>
+          </div>
+          <div id="invPanelBody"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ════ VALIDATION ════ -->
     <section class="section" id="sectionValidation">
       <div class="page-hdr" style="border-bottom:1px solid var(--border)">
@@ -627,6 +682,42 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
           Bulk DL threshold is 2000 MB. The weight multipliers (0.0–1.0) scale how heavily off-hours
           logins and VPN usage are penalised for a given role.
         </div>
+
+          <!-- Escalation config -->
+          <div class="card" style="margin-top:16px">
+            <div class="card-hdr"><h3>Alert Escalation</h3><span style="font-size:11px;color:var(--text-muted)">Gmail SMTP / email alerts</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:10px;padding:16px" id="escalationCfgBody">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div><label class="fl">SMTP User (Gmail)</label><input class="fi" id="escSmtpUser" type="email" placeholder="you@gmail.com"></div>
+                <div><label class="fl">App Password</label><input class="fi" id="escSmtpPass" type="password" placeholder="Gmail app password"></div>
+                <div><label class="fl">Recipient Email</label><input class="fi" id="escRecipient" type="email" placeholder="analyst@company.com"></div>
+                <div><label class="fl">Min Severity</label>
+                  <select class="fi" id="escMinSev" style="cursor:pointer">
+                    <option value="suspicious">Suspicious</option>
+                    <option value="high_risk">High Risk</option>
+                    <option value="critical" selected>Critical</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-family:var(--mono)">
+                  <input type="checkbox" id="escEnabled" style="width:14px;height:14px">
+                  Enable email escalation
+                </label>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button onclick="saveEscalationConfig()" style="background:var(--blue);border:none;border-radius:var(--r);padding:8px 16px;color:#fff;font-size:12px;font-family:var(--mono);cursor:pointer">Save Config</button>
+                <button onclick="testEscalation()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:8px 16px;color:var(--text);font-size:12px;font-family:var(--mono);cursor:pointer">Send Test Email</button>
+              </div>
+              <div id="escStatus" style="font-size:11px;font-family:var(--mono);color:var(--text-muted)"></div>
+              <div style="margin-top:8px">
+                <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono);margin-bottom:6px">Recent escalation emails</div>
+                <div id="escLogTable" style="font-size:11px;font-family:var(--mono)">
+                  <div style="color:var(--text-muted);padding:10px 0">No escalations sent yet</div>
+                </div>
+              </div>
+            </div>
+          </div>
       </div>
     </section>
 
@@ -715,7 +806,8 @@ function showSection(name){
   });
   currentSection=name;
   if(name==='Validation')runValidation();
-  if(name==='Config')loadConfig();
+  if(name==='Config'){loadConfig();loadEscalationConfig();}
+  if(name==='Investigations')loadInvestigations();
 }
 
 // ══════════════════════════════════════════════════════
@@ -865,6 +957,10 @@ function addAlertRow(d){
       <span class="ai-score sev-${sev}">${Math.round(d.risk_score||0)}</span>
     </div>
     ${d.triggered_rules&&d.triggered_rules.length?`<div style="margin-top:5px;font-size:10px;color:var(--text-muted);font-family:var(--mono)">${d.triggered_rules.slice(0,3).join(' · ')}</div>`:''}
+    <button onclick="openCaseFromAlert('${d.alert_id||''}','${d.user_id||''}','${d.department||''}','${d.severity||'normal'}');event.stopPropagation()"
+      style="margin-top:6px;background:var(--blue-d);border:1px solid rgba(88,166,255,.3);border-radius:var(--r-sm);padding:3px 10px;font-size:10px;color:var(--blue);cursor:pointer;font-family:var(--mono)">
+      Open Case
+    </button>
   `;
   feed.insertBefore(el,feed.firstChild);
   if(feed.children.length>200)feed.lastChild.remove();
@@ -1092,6 +1188,164 @@ function openModalFromProfile(uid,d){
 }
 function closeModal(){document.getElementById('riskModal').classList.remove('open');}
 document.getElementById('riskModal').addEventListener('click',e=>{if(e.target.id==='riskModal')closeModal();});
+
+// ══════════════════════════════════════════════════════
+//  INVESTIGATIONS
+// ══════════════════════════════════════════════════════
+function loadInvestigations(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  const status=document.getElementById('invFilterStatus')?.value||'';
+  fetch(base+'/api/investigations?status='+encodeURIComponent(status)+'&limit=100')
+    .then(r=>r.json()).then(data=>{
+      const tbody=document.getElementById('invTableBody');
+      if(!tbody)return;
+      const badge=document.getElementById('invBadge');
+      if(badge){
+        const openCount=data.open_count||0;
+        badge.textContent=openCount>99?'99+':openCount;
+        badge.style.display=openCount?'':'none';
+      }
+      if(!data.cases||!data.cases.length){
+        tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No investigation cases</td></tr>';
+        return;
+      }
+      const statusColors={open:'var(--blue)',confirmed_threat:'var(--red)',false_positive:'var(--green)',under_investigation:'var(--amber)',closed:'var(--text-muted)'};
+      tbody.innerHTML=data.cases.map(c=>`
+        <tr onclick="openInvPanel('${c.case_id}')" style="border-bottom:1px solid var(--border-subtle);cursor:pointer" onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background=''">
+          <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text-muted)">${c.case_id}</td>
+          <td style="padding:8px 10px;font-family:var(--mono)">${c.user_id||'—'}</td>
+          <td style="padding:8px 10px">${c.department||'—'}</td>
+          <td style="padding:8px 10px"><span class="badge badge-${c.severity||'normal'}">${(c.severity||'—').replace('_',' ')}</span></td>
+          <td style="padding:8px 10px"><span style="color:${statusColors[c.status]||'var(--text-secondary)'}; font-size:11px;font-family:var(--mono)">${(c.status||'open').replace(/_/g,' ')}</span></td>
+          <td style="padding:8px 10px;font-size:11px;color:var(--text-muted)">${(c.created_at||'').slice(0,16)}</td>
+          <td style="padding:8px 10px;font-size:11px;color:var(--text-secondary);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.analyst_notes||'—'}</td>
+        </tr>`).join('');
+    }).catch(e=>console.error('Investigations load error:',e));
+}
+
+function openInvPanel(caseId){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/investigations/'+caseId)
+    .then(r=>r.json()).then(c=>{
+      document.getElementById('invPanel').style.display='block';
+      document.getElementById('invPanelTitle').textContent='Case: '+c.case_id;
+      document.getElementById('invPanelBody').innerHTML=`
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="pipe-row"><span class="pipe-label">User</span><span class="pipe-val mono">${c.user_id||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Department</span><span class="pipe-val">${c.department||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Alert ID</span><span class="pipe-val mono" style="font-size:10px">${c.alert_id||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Opened</span><span class="pipe-val" style="font-size:11px">${(c.created_at||'').slice(0,16)}</span></div>
+          <div style="margin-top:8px">
+            <label style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">STATUS</label>
+            <select id="invPanelStatus" onchange="_saveInvPanel('${c.case_id}')"
+              style="width:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 8px;color:var(--text);font-size:12px;font-family:var(--mono)">
+              ${['open','under_investigation','confirmed_threat','false_positive','closed'].map(s=>`<option value="${s}"${c.status===s?' selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-top:8px">
+            <label style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">ANALYST NOTES</label>
+            <textarea id="invPanelNotes" onblur="_saveInvPanel('${c.case_id}')"
+              style="width:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px;color:var(--text);font-size:12px;font-family:var(--mono);resize:vertical;min-height:80px"
+              placeholder="Add analyst notes...">${c.analyst_notes||''}</textarea>
+          </div>
+        </div>`;
+    }).catch(e=>console.error('Case load error:',e));
+}
+
+function _saveInvPanel(caseId){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  const status=document.getElementById('invPanelStatus')?.value||'';
+  const notes=document.getElementById('invPanelNotes')?.value??null;
+  fetch(base+'/api/investigations/'+caseId,{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status,analyst_notes:notes})
+  }).then(()=>loadInvestigations()).catch(()=>{});
+}
+
+function openCaseFromAlert(alertId, userId, dept, severity){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/investigations',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({alert_id:alertId,user_id:userId,department:dept,severity:severity})
+  }).then(r=>r.json()).then(data=>{
+    if(data.case_id){
+      showSection('Investigations');
+      loadInvestigations();
+    }
+  }).catch(()=>{});
+}
+
+// ══════════════════════════════════════════════════════
+//  ESCALATION CONFIG
+// ══════════════════════════════════════════════════════
+function loadEscalationConfig(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/escalation/config').then(r=>r.json()).then(cfg=>{
+    document.getElementById('escSmtpUser').value=cfg.smtp_user||'';
+    document.getElementById('escRecipient').value=cfg.recipient_email||'';
+    document.getElementById('escEnabled').checked=!!cfg.enabled;
+    document.getElementById('escMinSev').value=cfg.min_severity||'critical';
+    loadEscalationLog();
+  }).catch(()=>{});
+}
+
+function saveEscalationConfig(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  const body={
+    enabled: document.getElementById('escEnabled').checked,
+    smtp_user: document.getElementById('escSmtpUser').value.trim(),
+    smtp_password: document.getElementById('escSmtpPass').value,
+    recipient_email: document.getElementById('escRecipient').value.trim(),
+    min_severity: document.getElementById('escMinSev').value,
+    smtp_host:'smtp.gmail.com', smtp_port:465
+  };
+  fetch(base+'/api/escalation/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(()=>{
+      document.getElementById('escStatus').textContent='Config saved ✓';
+      document.getElementById('escStatus').style.color='var(--green)';
+      setTimeout(()=>{document.getElementById('escStatus').textContent='';},3000);
+    }).catch(()=>{});
+}
+
+function testEscalation(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  document.getElementById('escStatus').textContent='Sending test email…';
+  document.getElementById('escStatus').style.color='var(--text-muted)';
+  fetch(base+'/api/escalation/test',{method:'POST'})
+    .then(r=>r.json()).then(r=>{
+      document.getElementById('escStatus').textContent=r.status==='sent'?'Test email sent ✓':(r.error||r.status);
+      document.getElementById('escStatus').style.color=r.status==='sent'?'var(--green)':'var(--red)';
+      loadEscalationLog();
+    }).catch(()=>{});
+}
+
+function loadEscalationLog(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/escalation/log?limit=20').then(r=>r.json()).then(data=>{
+    const el=document.getElementById('escLogTable');
+    if(!el)return;
+    if(!data.entries||!data.entries.length){
+      el.innerHTML='<div style="color:var(--text-muted);padding:10px 0">No escalations sent yet</div>';
+      return;
+    }
+    el.innerHTML='<table style="width:100%;border-collapse:collapse">'
+      +'<tr style="border-bottom:1px solid var(--border)">'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Time</th>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">User</th>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Score</th>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Recipient</th>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Status</th></tr>'
+      +data.entries.map(e=>`<tr style="border-bottom:1px solid var(--border-subtle)">
+        <td style="padding:4px 6px;color:var(--text-muted)">${(e.sent_at||'').slice(11,19)}</td>
+        <td style="padding:4px 6px">${e.user_id||'—'}</td>
+        <td style="padding:4px 6px">${e.risk_score||0}</td>
+        <td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">${e.sent_to||'—'}</td>
+        <td style="padding:4px 6px;color:${e.status==='sent'?'var(--green)':'var(--red)'}">${e.status||'—'}</td>
+      </tr>`).join('')+'</table>';
+  }).catch(()=>{});
+}
 
 // ══════════════════════════════════════════════════════
 //  VALIDATION
