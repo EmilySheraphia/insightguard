@@ -356,6 +356,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
         Investigations
         <span class="nav-badge" id="invBadge" style="display:none">0</span>
       </button>
+      <button class="nav-item" data-section="Timeline" onclick="showSection('Timeline')">
+        <svg class="ni-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+        Timeline
+      </button>
       <button class="nav-item" data-section="Validation" onclick="showSection('Validation')">
         <svg class="ni-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
         Validation
@@ -597,6 +601,35 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
       </div>
     </section>
 
+    <!-- ════ SESSION TIMELINE ════ -->
+    <section class="section" id="sectionTimeline">
+      <div class="page-hdr" style="border-bottom:1px solid var(--border)">
+        <div>
+          <div class="page-hdr-title">Session Timeline</div>
+          <div class="page-hdr-sub">Chronological session reconstruction per user</div>
+        </div>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;flex:1">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="tlUserInput" class="fi" type="text" placeholder="Type user ID…" style="width:180px;font-family:var(--mono)"
+            oninput="_tlFilterUsers(this.value)">
+          <select id="tlUserSelect" onchange="document.getElementById('tlUserInput').value=this.value;loadTimeline()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;color:var(--text);font-size:12px;font-family:var(--mono);cursor:pointer;max-width:200px">
+            <option value="">-- select user --</option>
+          </select>
+          <button onclick="loadTimeline()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:6px 12px;color:var(--text);font-size:12px;cursor:pointer;font-family:var(--mono)">Load</button>
+          <select id="tlDays" onchange="loadTimeline()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;color:var(--text);font-size:12px;font-family:var(--mono);cursor:pointer">
+            <option value="1">1 day</option>
+            <option value="3">3 days</option>
+            <option value="7" selected>7 days</option>
+            <option value="14">14 days</option>
+          </select>
+        </div>
+        <div id="tlContent">
+          <div style="text-align:center;padding:60px;color:var(--text-muted)">Select a user to view their session timeline</div>
+        </div>
+      </div>
+    </section>
+
     <!-- ════ VALIDATION ════ -->
     <section class="section" id="sectionValidation">
       <div class="page-hdr" style="border-bottom:1px solid var(--border)">
@@ -813,6 +846,7 @@ function showSection(name){
   if(name==='Validation')runValidation();
   if(name==='Config'){loadConfig();loadEscalationConfig();}
   if(name==='Investigations')loadInvestigations();
+  if(name==='Timeline')_tlPopulateUserList();
 }
 
 // ══════════════════════════════════════════════════════
@@ -1188,11 +1222,223 @@ function openModalFromProfile(uid,d){
           <span style="color:var(--text-muted);font-family:var(--mono)">${(t.timestamp||'').slice(11,19)}</span>
           <span style="margin-left:8px">${t.activity_type||'—'}</span>
         </div>`).join('')}`:''}
+    <div id="trajectoryChartWrap" style="margin-top:14px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em">Risk Trajectory — Last 7 Days</div>
+      <div id="trajectoryChartArea" style="color:var(--text-muted);font-size:12px">Loading…</div>
+    </div>
   `;
   document.getElementById('riskModal').classList.add('open');
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/users/'+encodeURIComponent(uid)+'/trajectory?days=7')
+    .then(r=>r.json())
+    .then(data=>_renderTrajectoryChart(data.points||[]))
+    .catch(()=>{
+      const el=document.getElementById('trajectoryChartArea');
+      if(el)el.textContent='Could not load trajectory data.';
+    });
 }
 function closeModal(){document.getElementById('riskModal').classList.remove('open');}
 document.getElementById('riskModal').addEventListener('click',e=>{if(e.target.id==='riskModal')closeModal();});
+
+// ══════════════════════════════════════════════════════
+//  RISK TRAJECTORY SVG CHART
+// ══════════════════════════════════════════════════════
+function _renderTrajectoryChart(points){
+  const el=document.getElementById('trajectoryChartArea');
+  if(!el)return;
+  if(!points||points.length<3){
+    el.innerHTML=`<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px">Not enough data yet (${points?points.length:0} events)</div>`;
+    return;
+  }
+
+  const W=480, H=180, PAD={top:12,right:16,bottom:28,left:36};
+  const chartW=W-PAD.left-PAD.right, chartH=H-PAD.top-PAD.bottom;
+
+  const times=points.map(p=>new Date(p.timestamp).getTime());
+  const minT=Math.min(...times), maxT=Math.max(...times);
+  const rangeT=maxT-minT||1;
+
+  const toX=t=>PAD.left+((t-minT)/rangeT)*chartW;
+  const toY=v=>PAD.top+chartH*(1-v/100);
+
+  const sevCol={normal:'#3fb950',suspicious:'#e3b341',high_risk:'#db6d28',critical:'#f85149'};
+  const dominant=(()=>{
+    const counts={normal:0,suspicious:0,high_risk:0,critical:0};
+    points.forEach(p=>counts[p.severity]=(counts[p.severity]||0)+1);
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+  })();
+  const lineCol=sevCol[dominant]||'#58a6ff';
+
+  const upperPts=points.map(p=>`${toX(new Date(p.timestamp).getTime()).toFixed(1)},${toY(p.confidence_upper).toFixed(1)}`).join(' ');
+  const lowerPts=[...points].reverse().map(p=>`${toX(new Date(p.timestamp).getTime()).toFixed(1)},${toY(p.confidence_lower).toFixed(1)}`).join(' ');
+  const bandPoly=upperPts+' '+lowerPts;
+
+  const scoreLine=points.map(p=>`${toX(new Date(p.timestamp).getTime()).toFixed(1)},${toY(p.risk_score).toFixed(1)}`).join(' ');
+
+  const thresholds=[
+    {v:45,col:'#e3b341',label:'Suspicious'},
+    {v:60,col:'#db6d28',label:'High Risk'},
+    {v:80,col:'#f85149',label:'Critical'},
+  ];
+
+  const dayLabels=(()=>{
+    const labels=[];
+    const step=Math.ceil(points.length/6)||1;
+    for(let i=0;i<points.length;i+=step){
+      const d=new Date(points[i].timestamp);
+      labels.push({x:toX(new Date(points[i].timestamp).getTime()),label:d.toLocaleDateString('en-GB',{weekday:'short'})});
+    }
+    return labels;
+  })();
+
+  const dots=points.map(p=>{
+    const cx=toX(new Date(p.timestamp).getTime()).toFixed(1);
+    const cy=toY(p.risk_score).toFixed(1);
+    const col=sevCol[p.severity]||'#58a6ff';
+    const tip=`${(p.timestamp||'').slice(0,19).replace('T',' ')} | ${p.activity_type} | Score: ${p.risk_score}`;
+    return `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${col}" stroke="var(--surface)" stroke-width="1.5"><title>${tip}</title></circle>`;
+  }).join('');
+
+  el.innerHTML=`
+  <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;overflow:visible">
+    <polygon points="${bandPoly}" fill="${lineCol}" fill-opacity="0.08" stroke="none"/>
+    ${thresholds.map(t=>`
+      <line x1="${PAD.left}" y1="${toY(t.v).toFixed(1)}" x2="${PAD.left+chartW}" y2="${toY(t.v).toFixed(1)}"
+        stroke="${t.col}" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+      <text x="${PAD.left+chartW+2}" y="${(toY(t.v)+4).toFixed(1)}" fill="${t.col}" font-size="8" font-family="var(--mono)" opacity="0.7">${t.label}</text>
+    `).join('')}
+    <polyline points="${scoreLine}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"/>
+    ${dots}
+    <line x1="${PAD.left}" y1="${PAD.top+chartH}" x2="${PAD.left+chartW}" y2="${PAD.top+chartH}" stroke="var(--border)" stroke-width="1"/>
+    ${[0,25,50,75,100].map(v=>`
+      <text x="${PAD.left-4}" y="${(toY(v)+4).toFixed(1)}" fill="var(--chart-tick)" font-size="8" font-family="var(--mono)" text-anchor="end">${v}</text>
+      <line x1="${PAD.left-2}" y1="${toY(v).toFixed(1)}" x2="${PAD.left}" y2="${toY(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+    `).join('')}
+    ${dayLabels.map(l=>`<text x="${l.x.toFixed(1)}" y="${(PAD.top+chartH+12).toFixed(1)}" fill="var(--chart-tick)" font-size="8" font-family="var(--mono)" text-anchor="middle">${l.label}</text>`).join('')}
+  </svg>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  SESSION TIMELINE
+// ══════════════════════════════════════════════════════
+function _tlFilterUsers(query){
+  const sel=document.getElementById('tlUserSelect');
+  if(!sel)return;
+  Array.from(sel.options).forEach(o=>{
+    o.style.display=(o.value.toLowerCase().includes(query.toLowerCase())||!query)?'':'none';
+  });
+}
+
+function _tlPopulateUserList(){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/stats').then(r=>r.json()).then(data=>{
+    const sel=document.getElementById('tlUserSelect');
+    if(!sel||!data.user_risk_profiles)return;
+    const existing=Array.from(sel.options).map(o=>o.value);
+    data.user_risk_profiles.forEach(u=>{
+      if(!existing.includes(u.user_id)){
+        const o=document.createElement('option');
+        o.value=o.textContent=u.user_id;
+        sel.appendChild(o);
+      }
+    });
+  }).catch(()=>{});
+}
+
+function loadTimeline(){
+  const uid=(document.getElementById('tlUserInput')?.value||document.getElementById('tlUserSelect')?.value||'').trim().toLowerCase();
+  if(!uid){
+    document.getElementById('tlContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted)">Enter a user ID above</div>';
+    return;
+  }
+  const days=parseInt(document.getElementById('tlDays')?.value||'7');
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  document.getElementById('tlContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading sessions…</div>';
+  fetch(base+'/api/users/'+encodeURIComponent(uid)+'/session?days='+days)
+    .then(r=>r.json())
+    .then(data=>_renderSessions(data.sessions||[]))
+    .catch(()=>{
+      document.getElementById('tlContent').innerHTML='<div style="text-align:center;padding:40px;color:var(--red)">Error loading timeline</div>';
+    });
+}
+
+function _renderSessions(sessions){
+  const el=document.getElementById('tlContent');
+  if(!sessions||!sessions.length){
+    el.innerHTML='<div style="text-align:center;padding:60px;color:var(--text-muted)">No sessions found for this user in the selected period</div>';
+    return;
+  }
+  const sevCol={normal:'#3fb950',suspicious:'#e3b341',high_risk:'#db6d28',critical:'#f85149'};
+  el.innerHTML=sessions.map(sess=>_renderOneSession(sess, sevCol)).join('');
+}
+
+function _renderOneSession(sess, sevCol){
+  const evs=sess.events||[];
+  if(!evs.length)return'';
+  const arcs=sess.threat_arcs||[];
+
+  const DOT_R=6, ROW_H=40, PAD_L=60, PAD_R=30;
+  const times=evs.map(e=>new Date(e.timestamp).getTime());
+  const minT=Math.min(...times), maxT=Math.max(...times);
+  const rangeT=maxT-minT||1;
+  const W=Math.max(600, evs.length*60);
+  const toX=t=>PAD_L+((t-minT)/rangeT)*(W-PAD_L-PAD_R);
+
+  const dots=evs.map((ev,i)=>{
+    const cx=toX(times[i]).toFixed(1);
+    const cy=(ROW_H/2).toFixed(1);
+    const col=sevCol[ev.severity]||'#58a6ff';
+    const tip=`${(ev.timestamp||'').slice(11,19)} | ${ev.activity_type} | Score: ${ev.risk_score}${ev.file_name?' | '+ev.file_name:''}`;
+    return `<circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="${col}" stroke="var(--surface)" stroke-width="2" style="cursor:pointer" onclick='openModal(${JSON.stringify(ev)})'><title>${tip}</title></circle>`;
+  }).join('');
+
+  const logIdToX={};
+  evs.forEach((ev,i)=>{ logIdToX[ev.log_id]=parseFloat(toX(times[i]).toFixed(1)); });
+  const arcPaths=arcs.map(arc=>{
+    const x1=logIdToX[arc.from], x2=logIdToX[arc.to];
+    if(x1==null||x2==null)return'';
+    const y=ROW_H/2;
+    const mx=(x1+x2)/2, my=y-18;
+    return `<path d="M${x1} ${y} Q${mx} ${my} ${x2} ${y}" fill="none" stroke="#f85149" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.8"/>
+            <text x="${mx}" y="${my-4}" fill="#f85149" font-size="8" font-family="var(--mono)" text-anchor="middle">${arc.label||'threat'}</text>`;
+  }).join('');
+
+  const lineY=ROW_H/2;
+  const lineX1=toX(minT).toFixed(1), lineX2=toX(maxT).toFixed(1);
+  const startLabel=(evs[0].timestamp||'').slice(11,16);
+  const endLabel=(evs[evs.length-1].timestamp||'').slice(11,16);
+
+  return `
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;font-family:var(--mono);color:var(--text-secondary)">
+        Session ${sess.session_id} — ${evs.length} events
+        ${arcs.length?`<span style="color:var(--red);margin-left:8px">⚠ ${arcs.length} threat arc${arcs.length>1?'s':''}</span>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted)">${(sess.start||'').slice(0,16).replace('T',' ')} → ${(sess.end||'').slice(11,16)}</div>
+    </div>
+    <div style="overflow-x:auto">
+      <svg viewBox="0 0 ${W} ${ROW_H}" style="width:${W}px;height:${ROW_H}px;min-width:100%">
+        <line x1="${lineX1}" y1="${lineY}" x2="${lineX2}" y2="${lineY}" stroke="var(--border)" stroke-width="1.5"/>
+        <text x="${lineX1}" y="${ROW_H-4}" fill="var(--chart-tick)" font-size="8" font-family="var(--mono)">${startLabel}</text>
+        <text x="${lineX2}" y="${ROW_H-4}" fill="var(--chart-tick)" font-size="8" font-family="var(--mono)" text-anchor="end">${endLabel}</text>
+        ${arcPaths}
+        ${dots}
+      </svg>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">
+      ${['normal','suspicious','high_risk','critical'].map(s=>`
+        <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted)">
+          <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${sevCol[s]}"/></svg>
+          ${s.replace('_',' ')}
+        </span>`).join('')}
+      <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--red)">
+        <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#f85149" stroke-dasharray="3,2" stroke-width="1.5"/></svg>
+        threat arc
+      </span>
+    </div>
+  </div>`;
+}
 
 // ══════════════════════════════════════════════════════
 //  INVESTIGATIONS
