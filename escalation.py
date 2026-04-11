@@ -11,9 +11,10 @@ import queue
 import smtplib
 import ssl
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 from pathlib import Path
 
 _SEV_ORDER = {"normal": 0, "suspicious": 1, "high_risk": 2, "critical": 3}
@@ -26,6 +27,7 @@ _DEFAULT_CONFIG = {
     "smtp_password": "",
     "recipient_email": "",
     "min_severity": "critical",
+    "dashboard_url": "http://localhost:5000",
 }
 
 
@@ -46,6 +48,7 @@ class EscalationEngine:
         self.config: dict = dict(_DEFAULT_CONFIG)
         self._load_config()
         self._queue: queue.Queue = queue.Queue(maxsize=200)
+        self._config_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._db = None
 
@@ -69,8 +72,9 @@ class EscalationEngine:
 
     def update_config(self, new_config: dict) -> None:
         """Replace config in memory and persist to disk."""
-        self.config.update(new_config)
-        self._save_config()
+        with self._config_lock:
+            self.config.update(new_config)
+            self._save_config()
 
     def start(self) -> None:
         """Start the background drain thread (idempotent)."""
@@ -85,10 +89,12 @@ class EscalationEngine:
         Called from _process_event() when severity meets the threshold.
         Drops silently if queue is full or escalation is disabled.
         """
-        if not self.config.get("enabled"):
+        with self._config_lock:
+            enabled = self.config.get("enabled")
+            min_sev = self.config.get("min_severity", "critical")
+        if not enabled:
             return
         sev = event_payload.get("severity", "normal")
-        min_sev = self.config.get("min_severity", "critical")
         if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(min_sev, 3):
             return
         try:
@@ -105,7 +111,7 @@ class EscalationEngine:
             "risk_score":    99,
             "activity_type": "test",
             "triggered_rules": ["test_rule"],
-            "timestamp":     datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp":     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         return self._send_email(payload)
 
@@ -121,19 +127,25 @@ class EscalationEngine:
                 print(f"[Escalation] Drain error: {e}")
 
     def _send_email(self, payload: dict) -> dict:
-        cfg = self.config
+        with self._config_lock:
+            cfg = dict(self.config)  # snapshot under lock
         if not cfg.get("smtp_user") or not cfg.get("smtp_password") or not cfg.get("recipient_email"):
             return {"status": "skipped", "error": "SMTP credentials not configured"}
+        user_id       = escape(payload.get("user_id", ""))
+        department    = escape(payload.get("department", ""))
+        activity_type = escape(payload.get("activity_type", ""))
+        timestamp     = escape(payload.get("timestamp", ""))
         subject = (
             f"[InsightGuard ALERT] {payload.get('severity','').upper()} — "
-            f"{payload.get('user_id','')} @ {payload.get('department','')}"
+            f"{user_id} @ {department}"
         )
         rules_html = "".join(
-            f"<li>{r}</li>" for r in (payload.get("triggered_rules") or [])
+            f"<li>{escape(r)}</li>" for r in (payload.get("triggered_rules") or [])
         )
         sev   = payload.get("severity", "normal")
         color = {"critical": "#f85149", "high_risk": "#db6d28",
                  "suspicious": "#e3b341", "normal": "#3fb950"}.get(sev, "#8b949e")
+        dashboard_url = cfg.get("dashboard_url", "http://localhost:5000")
         body_html = f"""
         <div style="font-family:Arial,sans-serif;max-width:600px">
           <div style="background:#161b22;padding:20px;border-radius:8px">
@@ -148,17 +160,17 @@ class EscalationEngine:
             </div>
             <table style="width:100%;font-size:13px;color:#e6edf3;border-collapse:collapse">
               <tr><td style="padding:6px 0;color:#8b949e;width:140px">User ID</td>
-                  <td style="padding:6px 0;font-family:monospace">{payload.get('user_id', '')}</td></tr>
+                  <td style="padding:6px 0;font-family:monospace">{user_id}</td></tr>
               <tr><td style="padding:6px 0;color:#8b949e">Department</td>
-                  <td style="padding:6px 0">{payload.get('department', '')}</td></tr>
+                  <td style="padding:6px 0">{department}</td></tr>
               <tr><td style="padding:6px 0;color:#8b949e">Activity</td>
-                  <td style="padding:6px 0">{payload.get('activity_type', '')}</td></tr>
+                  <td style="padding:6px 0">{activity_type}</td></tr>
               <tr><td style="padding:6px 0;color:#8b949e">Timestamp</td>
-                  <td style="padding:6px 0;font-family:monospace">{payload.get('timestamp', '')}</td></tr>
+                  <td style="padding:6px 0;font-family:monospace">{timestamp}</td></tr>
             </table>
             {f'<div style="margin-top:12px"><div style="font-size:12px;color:#8b949e;margin-bottom:6px">Triggered Rules</div><ul style="color:#f85149;font-family:monospace;font-size:12px;margin:0;padding-left:20px">{rules_html}</ul></div>' if rules_html else ''}
             <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363d">
-              <a href="http://localhost:5000/" style="background:#58a6ff;color:#fff;
+              <a href="{dashboard_url}/" style="background:#58a6ff;color:#fff;
                  padding:8px 16px;border-radius:6px;text-decoration:none;font-size:13px">
                 View Dashboard
               </a>
