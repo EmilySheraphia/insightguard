@@ -326,6 +326,77 @@ def test_api():
     return passed == total
 
 
+# ─── Analytics ────────────────────────────────────────────────────────────
+
+def test_analytics():
+    section("ANALYTICS — ConfidenceEngine + CounterfactualEngine")
+    from analytics import ConfidenceEngine, CounterfactualEngine
+
+    ce = ConfidenceEngine()
+
+    # Band 1: 0–9 events → margin=25, label=low
+    r = ce.score(events_seen=5, risk_score=60)
+    assert r["label"] == "low",       f"Expected low, got {r['label']}"
+    assert r["margin"] == 25,         f"Expected margin 25, got {r['margin']}"
+    assert r["lower"] == 35,          f"Expected lower 35, got {r['lower']}"
+    assert r["upper"] == 85,          f"Expected upper 85, got {r['upper']}"
+    assert r["pct"] == 40,            f"Expected pct 40, got {r['pct']}"
+    ok("ConfidenceEngine band=low (5 events, score=60)")
+
+    # Band 2: 10–29 events → margin=15, label=moderate
+    r2 = ce.score(events_seen=15, risk_score=50)
+    assert r2["label"] == "moderate"
+    assert r2["margin"] == 15
+    ok("ConfidenceEngine band=moderate (15 events, score=50)")
+
+    # Band 3: 30–99 events → margin=8, label=high
+    r3 = ce.score(events_seen=50, risk_score=70)
+    assert r3["label"] == "high"
+    assert r3["margin"] == 8
+    ok("ConfidenceEngine band=high (50 events, score=70)")
+
+    # Band 4: 100+ events → margin=4, label=very_high
+    r4 = ce.score(events_seen=200, risk_score=80)
+    assert r4["label"] == "very_high"
+    assert r4["margin"] == 4
+    ok("ConfidenceEngine band=very_high (200 events, score=80)")
+
+    # Clamp check: lower never < 0, upper never > 100
+    r5 = ce.score(events_seen=0, risk_score=5)
+    assert r5["lower"] == 0,   f"Expected lower=0, got {r5['lower']}"
+    r6 = ce.score(events_seen=0, risk_score=95)
+    assert r6["upper"] == 100, f"Expected upper=100, got {r6['upper']}"
+    ok("ConfidenceEngine clamps lower>=0, upper<=100")
+
+    # CounterfactualEngine: off-hours perturbation
+    cfe = CounterfactualEngine()
+    fv = {
+        "hour": 2, "day_of_week": 1, "is_off_hours": 1, "is_weekend": 0,
+        "event_type_code": 0, "failed_attempts": 0, "vpn": 0, "tor": 0,
+        "new_device": 0, "is_risky_country": 0, "is_unknown_country": 0,
+        "file_count": 5, "data_mb": 10.0, "usb_transfer": 0, "usb_data_mb": 0.0,
+        "recipient_count": 1, "attachment_mb": 0.0, "external_email": 0, "risky_web": 0,
+    }
+    results = cfe.explain(fv, original_score=72)
+    assert isinstance(results, list),          "explain() must return a list"
+    assert len(results) <= 3,                  f"Must return top-3, got {len(results)}"
+    for item in results:
+        assert "label" in item
+        assert "description" in item
+        assert "new_score" in item
+        assert "delta" in item
+        assert "pct_change" in item
+    ok(f"CounterfactualEngine returns {len(results)} perturbations")
+
+    # Verify delta direction makes sense for off-hours flip
+    during_hours = next((x for x in results if x["label"] == "during_working_hours"), None)
+    if during_hours:
+        assert during_hours["delta"] < 0, "During-hours should reduce score"
+        ok(f"during_working_hours delta={during_hours['delta']} (negative, correct)")
+
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -337,6 +408,7 @@ if __name__ == "__main__":
         "Layer 5 (Explainability)":test_layer5(),
         "Storage Layer":           test_storage(),
         "Layer 6 (Flask API)":     test_api(),
+        "Analytics":               test_analytics(),
     }
 
     section("FINAL SUMMARY")
