@@ -453,6 +453,50 @@ def test_investigations_db():
     return True
 
 
+# ─── Escalation Engine ────────────────────────────────────────────────────
+
+def test_escalation_engine():
+    section("EscalationEngine — config + enqueue logic")
+    import tempfile, json, os
+    from escalation import EscalationEngine
+
+    # Write a temp config
+    cfg = {
+        "enabled": False,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 465,
+        "smtp_user": "",
+        "smtp_password": "",
+        "recipient_email": "",
+        "min_severity": "critical"
+    }
+    tmp_cfg = tempfile.mktemp(suffix=".json")
+    with open(tmp_cfg, "w") as f:
+        json.dump(cfg, f)
+
+    eng = EscalationEngine(config_path=tmp_cfg)
+    assert eng.config["enabled"] == False
+    assert eng.config["min_severity"] == "critical"
+    ok("EscalationEngine loads config correctly")
+
+    # enqueue should not crash when disabled
+    eng.enqueue({
+        "user_id": "jsmith", "department": "Finance",
+        "severity": "critical", "risk_score": 92,
+        "activity_type": "file_access", "triggered_rules": ["usb_exfil"],
+        "timestamp": "2026-04-11T03:00:00Z"
+    })
+    ok("enqueue() accepts payload without crash (disabled mode)")
+
+    # update_config
+    eng.update_config({"enabled": False, "min_severity": "high_risk"})
+    assert eng.config["min_severity"] == "high_risk"
+    ok("update_config() updates min_severity")
+
+    os.unlink(tmp_cfg)
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -466,6 +510,7 @@ if __name__ == "__main__":
         "Layer 6 (Flask API)":     test_api(),
         "Analytics":               test_analytics(),
         "DB Investigations":       test_investigations_db(),
+        "EscalationEngine":        test_escalation_engine(),
     }
 
     section("FINAL SUMMARY")
