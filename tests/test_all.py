@@ -394,6 +394,15 @@ def test_analytics():
         assert during_hours["delta"] < 0, "During-hours should reduce score"
         ok(f"during_working_hours delta={during_hours['delta']} (negative, correct)")
 
+    # Check app.py has the two new routes
+    import os as _os
+    app_path = _os.path.join(_os.path.dirname(__file__), '..', 'application', 'app.py')
+    with open(app_path) as f:
+        src = f.read()
+    assert '/api/explain/counterfactual' in src, "Missing counterfactual route in app.py"
+    assert '/api/explain/confidence' in src,     "Missing confidence route in app.py"
+    ok("Flask routes for counterfactual + confidence present in app.py")
+
     return True
 
 

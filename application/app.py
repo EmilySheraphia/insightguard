@@ -11,7 +11,7 @@ Final score pipeline:
 """
 
 from flask import Flask, request, jsonify, Response, stream_with_context
-from datetime import datetime
+from datetime import datetime, timezone
 import json, queue, threading, random, time
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -28,6 +28,9 @@ from per_user_baseline             import ingest_and_score as pub_score
 from per_user_baseline             import get_store as get_pub_store
 from ground_truth_validator        import validate as run_validation
 from nexon_psychometrics           import load_nexon_profiles
+from analytics import CounterfactualEngine, ConfidenceEngine
+_cf_engine   = CounterfactualEngine()
+_conf_engine = ConfidenceEngine()
 from pathlib import Path
 import numpy as np
 import json as _json
@@ -226,7 +229,7 @@ def _sim(level):
     )
     # Use real time for timestamp/storage; keep simulated hour in feature vector
     # so IF/LOF score against the scenario's intended time pattern
-    _now = datetime.now()
+    _now = datetime.now(timezone.utc).replace(tzinfo=None)
     fv_dict["is_off_hours"] = int(not (8 <= fv_dict["hour"] < 18))
     result = _full_score(fv_dict, user["id"])
     atype  = _EVENT_NAMES.get(fv_dict["event_type_code"],"login")
@@ -234,7 +237,7 @@ def _sim(level):
     import uuid
     lid = str(uuid.uuid4())[:12]
     db.upsert_user(uid, user["dept"], user["role"])
-    db.insert_activity_log(lid, uid, _now.isoformat(), atype, "simulator", details=fv_dict)
+    db.insert_activity_log(lid, uid, _now.isoformat()+"Z", atype, "simulator", details=fv_dict)
     db.insert_features("ft_"+lid, uid, lid, fv_dict)
     did = "dt_"+lid
     db.insert_anomaly_result(did, uid, lid, result)
@@ -252,7 +255,7 @@ def _sim(level):
         "psychometric_risk":result["psychometric_risk"],"pers_enhancement":result["pers_enhancement"],
         "risk_score":result["risk_score"],"severity":result["severity"],
         "ueba_score":result["ueba_score"],"if_score":result["if_score"],"lof_score":result["lof_score"],
-        "triggered_rules":result["triggered_rules"],"timestamp":_now.isoformat()+"Z",
+        "triggered_rules":result["triggered_rules"],"timestamp":_now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data_mb":fv_dict["data_mb"],"file_count":fv_dict["file_count"],"tor":bool(fv_dict["tor"]),
     }
     _broadcast_sse(pay)
@@ -278,6 +281,19 @@ def _process_event(raw):
         aid = "al_"+log.log_id[:10]
         db.insert_alert(aid, uid, did, result["severity"], log.activity_type,
                         "Rules: "+", ".join(result["triggered_rules"][:3]) if result["triggered_rules"] else "Anomaly")
+    # Allow agent to force a minimum severity for composite threat events
+    sev_override = raw.get("severity_override","")
+    _SEV_ORDER = {"normal":0,"suspicious":1,"high_risk":2,"critical":3}
+    final_sev = result["severity"]
+    if sev_override in _SEV_ORDER and _SEV_ORDER[sev_override] > _SEV_ORDER.get(final_sev,0):
+        final_sev = sev_override
+        result["severity"] = sev_override
+        result["is_anomaly"] = True
+
+    file_name = raw.get("file_name","") or raw.get("file_path","")
+    if "/" in file_name or "\\" in file_name:
+        file_name = file_name.split("/")[-1].split("\\")[-1]
+
     pay = {
         "alert_id":aid,"user_id":uid,"department":raw.get("department",""),
         "activity_type":log.activity_type,
@@ -285,10 +301,14 @@ def _process_event(raw):
         "pub_combined":result["pub_combined"],"pub_is_trained":result["pub_is_trained"],
         "pub_events_seen":result["pub_events_seen"],"pub_status":result["pub_status"],
         "psychometric_risk":result["psychometric_risk"],"pers_enhancement":result["pers_enhancement"],
-        "risk_score":result["risk_score"],"severity":result["severity"],
+        "risk_score":result["risk_score"],"severity":final_sev,
         "ueba_score":result["ueba_score"],"if_score":result["if_score"],"lof_score":result["lof_score"],
-        "triggered_rules":result["triggered_rules"],"timestamp":datetime.now().isoformat()+"Z",
+        "triggered_rules":result["triggered_rules"],"timestamp":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data_mb":fv.data_mb,"file_count":fv.file_count,"tor":bool(fv.tor),
+        "file_name":file_name,
+        "files":raw.get("files",[]),
+        "threat_type":raw.get("threat_type",""),
+        "description":raw.get("description",""),
     }
     _broadcast_sse(pay)
     return {**pay,"is_anomaly":result["is_anomaly"],"log_id":log.log_id,"timestamp":log.timestamp.isoformat()}
@@ -685,6 +705,103 @@ def get_stats():
              "pub_events_seen":p.get("pub_events_seen",0)}
             for p in sorted(user_profiles.values(),key=lambda x:x["rolling_score"],reverse=True)]
     return jsonify(stats),200
+
+@app.delete("/api/database/reset")
+def reset_database():
+    import sqlite3 as _sq
+    with _sq.connect(db.db_path) as con:
+        con.execute("DELETE FROM threat_alerts")
+        con.execute("DELETE FROM anomaly_results")
+        con.execute("DELETE FROM behaviour_features")
+        con.execute("DELETE FROM activity_logs")
+        con.execute("DELETE FROM users")
+    with profile_lock:
+        user_profiles.clear()
+    return jsonify({"status": "ok", "message": "All logs cleared"}), 200
+
+
+@app.post("/api/explain/counterfactual")
+def explain_counterfactual():
+    body = request.get_json(silent=True) or {}
+    fv_dict      = body.get("feature_dict", {})
+    orig_score   = int(body.get("original_score", 0))
+    if not fv_dict:
+        return jsonify({"error": "feature_dict required"}), 400
+    results = _cf_engine.explain(fv_dict, orig_score)
+    return jsonify({"counterfactuals": results}), 200
+
+
+@app.get("/api/explain/confidence")
+def explain_confidence():
+    user_id     = request.args.get("user_id", "")
+    score       = int(request.args.get("score", 0))
+    with profile_lock:
+        profile = user_profiles.get(user_id.lower(), {})
+    events_seen = int(profile.get("pub_events_seen", 0))
+    result = _conf_engine.score(events_seen=events_seen, risk_score=score)
+    return jsonify(result), 200
+
+
+@app.get("/api/events/recent")
+def recent_events():
+    limit = min(int(request.args.get("limit", 200)), 500)
+    # Default: only show events from the last 60 minutes so synthetic
+    # training data (timestamped hours/days ago) never pollutes the log.
+    minutes = int(request.args.get("minutes", 60))
+    from datetime import timedelta
+    since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S")
+    import sqlite3 as _sq
+    with _sq.connect(db.db_path) as con:
+        con.row_factory = _sq.Row
+        rows = con.execute("""
+            SELECT
+                al.log_id, al.user_id, al.timestamp, al.activity_type, al.source,
+                u.department, u.role,
+                ar.risk_score, ar.severity, ar.is_anomaly,
+                ar.if_score, ar.lof_score, ar.ueba_score, ar.triggered_rules
+            FROM activity_logs al
+            LEFT JOIN users u            ON al.user_id = u.user_id
+            LEFT JOIN anomaly_results ar ON ar.log_id  = al.log_id
+            WHERE al.timestamp >= ?
+            ORDER BY al.timestamp DESC
+            LIMIT ?
+        """, (since, limit)).fetchall()
+    events = []
+    for r in rows:
+        rules = []
+        try:
+            rules = _json.loads(r["triggered_rules"] or "[]")
+        except Exception:
+            pass
+        ml = round((r["if_score"] or 0) * 0.4 + (r["lof_score"] or 0) * 0.3 + (r["ueba_score"] or 0) * 0.3, 1)
+        # Extract file_name from details_json if stored
+        file_name = ""
+        try:
+            details = _json.loads(r["details_json"] or "{}") if "details_json" in r.keys() else {}
+            raw_path = details.get("file_path","") or details.get("file_name","")
+            if raw_path:
+                file_name = raw_path.split("/")[-1].split("\\")[-1]
+        except Exception:
+            pass
+        events.append({
+            "user_id":       r["user_id"],
+            "department":    r["department"] or "",
+            "activity_type": r["activity_type"] or "",
+            "timestamp":     r["timestamp"] or "",
+            "source":        r["source"] or "",
+            "risk_score":    r["risk_score"] or 0,
+            "severity":      r["severity"] or "normal",
+            "is_anomaly":    bool(r["is_anomaly"]),
+            "ml_score":      ml,
+            "pub_combined":  r["risk_score"] or 0,
+            "if_score":      r["if_score"] or 0,
+            "lof_score":     r["lof_score"] or 0,
+            "ueba_score":    r["ueba_score"] or 0,
+            "triggered_rules": rules,
+            "file_name":     file_name,
+        })
+    return jsonify({"count": len(events), "events": events}), 200
+
 
 @app.get("/api/stream")
 def sse_stream():
