@@ -137,6 +137,37 @@ class DatabaseManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_user ON threat_alerts(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON threat_alerts(status)")
 
+            # Table 6: Investigation Cases
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS investigations (
+                    case_id       TEXT PRIMARY KEY,
+                    alert_id      TEXT,
+                    user_id       TEXT NOT NULL,
+                    department    TEXT,
+                    severity      TEXT,
+                    status        TEXT DEFAULT 'open',
+                    analyst_notes TEXT DEFAULT '',
+                    created_at    TEXT DEFAULT (datetime('now')),
+                    updated_at    TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
+            # Table 7: Escalation Log
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS escalation_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     TEXT,
+                    severity    TEXT,
+                    risk_score  INTEGER,
+                    sent_to     TEXT,
+                    status      TEXT,
+                    error       TEXT,
+                    sent_at     TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_user   ON investigations(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_status ON investigations(status)")
+
     # ── User operations ──────────────────────────────────────────────────
 
     def upsert_user(self, user_id: str, department: str = "", role: str = "") -> None:
@@ -300,6 +331,82 @@ class DatabaseManager:
             "alert_levels":  dict(alert_counts),
             "monitored_users": user_count,
         }
+
+
+    # ── Investigation operations ──────────────────────────────────────────
+
+    def create_investigation(self, case_id: str, alert_id: str = "",
+                              user_id: str = "", department: str = "",
+                              severity: str = "open") -> None:
+        with self._lock, self._conn() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO investigations
+                    (case_id, alert_id, user_id, department, severity)
+                VALUES (?, ?, ?, ?, ?)
+            """, (case_id, alert_id, user_id, department, severity))
+
+    def list_investigations(self, status: str = "", user_id: str = "",
+                             limit: int = 100) -> list[dict]:
+        q      = "SELECT * FROM investigations WHERE 1=1"
+        params: list = []
+        if status:
+            q += " AND status = ?";  params.append(status)
+        if user_id:
+            q += " AND user_id = ?"; params.append(user_id)
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(min(limit, 200))
+        with self._conn() as conn:
+            rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_investigation(self, case_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM investigations WHERE case_id = ?", (case_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_investigation(self, case_id: str, status: str = "",
+                              analyst_notes: str | None = None) -> bool:
+        valid = {"open", "confirmed_threat", "false_positive",
+                 "under_investigation", "closed"}
+        sets, params = [], []
+        if status:
+            if status not in valid:
+                return False
+            sets.append("status = ?"); params.append(status)
+        if analyst_notes is not None:
+            sets.append("analyst_notes = ?"); params.append(analyst_notes)
+        if not sets:
+            return False
+        sets.append("updated_at = datetime('now')")
+        params.append(case_id)
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                f"UPDATE investigations SET {', '.join(sets)} WHERE case_id = ?",
+                params
+            )
+        return cur.rowcount > 0
+
+    # ── Escalation log operations ─────────────────────────────────────────
+
+    def insert_escalation_log(self, user_id: str, severity: str,
+                               risk_score: int, sent_to: str,
+                               status: str, error: str = "") -> None:
+        with self._lock, self._conn() as conn:
+            conn.execute("""
+                INSERT INTO escalation_log
+                    (user_id, severity, risk_score, sent_to, status, error)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, severity, risk_score, sent_to, status, error))
+
+    def get_escalation_log(self, limit: int = 50) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM escalation_log ORDER BY sent_at DESC LIMIT ?",
+                (min(limit, 200),)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------

@@ -406,6 +406,53 @@ def test_analytics():
     return True
 
 
+# ─── DB: investigations + escalation_log ──────────────────────────────────
+
+def test_investigations_db():
+    section("DB — investigations + escalation_log tables")
+    import tempfile, os
+    from storage.database import DatabaseManager
+
+    tmp = tempfile.mktemp(suffix=".db")
+    db  = DatabaseManager(db_path=tmp)
+
+    # Create investigation
+    db.create_investigation("case-001", alert_id="al_abc", user_id="jsmith",
+                             department="Finance", severity="critical")
+    ok("create_investigation() succeeds")
+
+    # List investigations
+    cases = db.list_investigations()
+    assert len(cases) == 1,                  f"Expected 1 case, got {len(cases)}"
+    assert cases[0]["case_id"] == "case-001"
+    assert cases[0]["status"] == "open"
+    ok("list_investigations() returns 1 open case")
+
+    # Get single investigation
+    case = db.get_investigation("case-001")
+    assert case is not None
+    assert case["user_id"] == "jsmith"
+    ok("get_investigation() returns case detail")
+
+    # Update investigation
+    db.update_investigation("case-001", status="confirmed_threat", analyst_notes="Verified exfil")
+    updated = db.get_investigation("case-001")
+    assert updated["status"] == "confirmed_threat"
+    assert updated["analyst_notes"] == "Verified exfil"
+    ok("update_investigation() sets status + notes")
+
+    # Escalation log
+    db.insert_escalation_log(user_id="jsmith", severity="critical", risk_score=92,
+                              sent_to="analyst@example.com", status="sent", error="")
+    logs = db.get_escalation_log(limit=10)
+    assert len(logs) == 1
+    assert logs[0]["status"] == "sent"
+    ok("insert_escalation_log() + get_escalation_log() work")
+
+    os.unlink(tmp)
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -418,6 +465,7 @@ if __name__ == "__main__":
         "Storage Layer":           test_storage(),
         "Layer 6 (Flask API)":     test_api(),
         "Analytics":               test_analytics(),
+        "DB Investigations":       test_investigations_db(),
     }
 
     section("FINAL SUMMARY")
