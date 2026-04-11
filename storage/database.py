@@ -1,14 +1,14 @@
 """
 InsightGuard — Storage Layer
 ==============================
-SQLite database managing all 5 tables from the system design:
+SQLite database managing all 7 tables:
   1. users              — employees monitored by the system
   2. activity_logs      — raw/processed event records
   3. behaviour_features — extracted feature vectors
   4. anomaly_results    — ML detection outputs
   5. threat_alerts      — generated security alerts
-
-Implements the full schema from Section 3.3 of the system design.
+  6. investigations     — analyst case management
+  7. escalation_log     — SMTP escalation audit trail
 """
 
 from __future__ import annotations
