@@ -795,6 +795,11 @@ function doLogout(){
 });
 
 // ══════════════════════════════════════════════════════
+//  HTML ESCAPE HELPER
+// ══════════════════════════════════════════════════════
+function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+
+// ══════════════════════════════════════════════════════
 //  SECTION NAVIGATION
 // ══════════════════════════════════════════════════════
 function showSection(name){
@@ -957,7 +962,7 @@ function addAlertRow(d){
       <span class="ai-score sev-${sev}">${Math.round(d.risk_score||0)}</span>
     </div>
     ${d.triggered_rules&&d.triggered_rules.length?`<div style="margin-top:5px;font-size:10px;color:var(--text-muted);font-family:var(--mono)">${d.triggered_rules.slice(0,3).join(' · ')}</div>`:''}
-    <button onclick="openCaseFromAlert('${d.alert_id||''}','${d.user_id||''}','${d.department||''}','${d.severity||'normal'}');event.stopPropagation()"
+    <button onclick="openCaseFromAlert('${esc(d.alert_id||'')}','${esc(d.user_id||'')}','${esc(d.department||'')}','${esc(d.severity||'normal')}');event.stopPropagation()"
       style="margin-top:6px;background:var(--blue-d);border:1px solid rgba(88,166,255,.3);border-radius:var(--r-sm);padding:3px 10px;font-size:10px;color:var(--blue);cursor:pointer;font-family:var(--mono)">
       Open Case
     </button>
@@ -1211,15 +1216,15 @@ function loadInvestigations(){
       }
       const statusColors={open:'var(--blue)',confirmed_threat:'var(--red)',false_positive:'var(--green)',under_investigation:'var(--amber)',closed:'var(--text-muted)'};
       tbody.innerHTML=data.cases.map(c=>`
-        <tr onclick="openInvPanel('${c.case_id}')" style="border-bottom:1px solid var(--border-subtle);cursor:pointer" onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background=''">
-          <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text-muted)">${c.case_id}</td>
-          <td style="padding:8px 10px;font-family:var(--mono)">${c.user_id||'—'}</td>
-          <td style="padding:8px 10px">${c.department||'—'}</td>
-          <td style="padding:8px 10px"><span class="badge badge-${c.severity||'normal'}">${(c.severity||'—').replace('_',' ')}</span></td>
-          <td style="padding:8px 10px"><span style="color:${statusColors[c.status]||'var(--text-secondary)'}; font-size:11px;font-family:var(--mono)">${(c.status||'open').replace(/_/g,' ')}</span></td>
-          <td style="padding:8px 10px;font-size:11px;color:var(--text-muted)">${(c.created_at||'').slice(0,16)}</td>
-          <td style="padding:8px 10px;font-size:11px;color:var(--text-secondary);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.analyst_notes||'—'}</td>
-        </tr>`).join('');
+  <tr onclick="openInvPanel('${esc(c.case_id)}')" style="border-bottom:1px solid var(--border-subtle);cursor:pointer" onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background=''">
+    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text-muted)">${esc(c.case_id)}</td>
+    <td style="padding:8px 10px;font-family:var(--mono)">${esc(c.user_id)||'—'}</td>
+    <td style="padding:8px 10px">${esc(c.department)||'—'}</td>
+    <td style="padding:8px 10px"><span class="badge badge-${esc(c.severity||'normal')}">${esc((c.severity||'—').replace('_',' '))}</span></td>
+    <td style="padding:8px 10px"><span style="color:${statusColors[c.status]||'var(--text-secondary)'}; font-size:11px;font-family:var(--mono)">${esc((c.status||'open').replace(/_/g,' '))}</span></td>
+    <td style="padding:8px 10px;font-size:11px;color:var(--text-muted)">${esc((c.created_at||'').slice(0,16))}</td>
+    <td style="padding:8px 10px;font-size:11px;color:var(--text-secondary);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.analyst_notes)||'—'}</td>
+  </tr>`).join('');
     }).catch(e=>console.error('Investigations load error:',e));
 }
 
@@ -1231,24 +1236,27 @@ function openInvPanel(caseId){
       document.getElementById('invPanelTitle').textContent='Case: '+c.case_id;
       document.getElementById('invPanelBody').innerHTML=`
         <div style="display:flex;flex-direction:column;gap:8px">
-          <div class="pipe-row"><span class="pipe-label">User</span><span class="pipe-val mono">${c.user_id||'—'}</span></div>
-          <div class="pipe-row"><span class="pipe-label">Department</span><span class="pipe-val">${c.department||'—'}</span></div>
-          <div class="pipe-row"><span class="pipe-label">Alert ID</span><span class="pipe-val mono" style="font-size:10px">${c.alert_id||'—'}</span></div>
-          <div class="pipe-row"><span class="pipe-label">Opened</span><span class="pipe-val" style="font-size:11px">${(c.created_at||'').slice(0,16)}</span></div>
+          <div class="pipe-row"><span class="pipe-label">User</span><span class="pipe-val mono">${esc(c.user_id)||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Department</span><span class="pipe-val">${esc(c.department)||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Alert ID</span><span class="pipe-val mono" style="font-size:10px">${esc(c.alert_id)||'—'}</span></div>
+          <div class="pipe-row"><span class="pipe-label">Opened</span><span class="pipe-val" style="font-size:11px">${esc((c.created_at||'').slice(0,16))}</span></div>
           <div style="margin-top:8px">
             <label style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">STATUS</label>
-            <select id="invPanelStatus" onchange="_saveInvPanel('${c.case_id}')"
+            <select id="invPanelStatus" onchange="_saveInvPanel('${esc(c.case_id)}')"
               style="width:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 8px;color:var(--text);font-size:12px;font-family:var(--mono)">
               ${['open','under_investigation','confirmed_threat','false_positive','closed'].map(s=>`<option value="${s}"${c.status===s?' selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}
             </select>
           </div>
           <div style="margin-top:8px">
             <label style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">ANALYST NOTES</label>
-            <textarea id="invPanelNotes" onblur="_saveInvPanel('${c.case_id}')"
+            <textarea id="invPanelNotes" onblur="_saveInvPanel('${esc(c.case_id)}')"
               style="width:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px;color:var(--text);font-size:12px;font-family:var(--mono);resize:vertical;min-height:80px"
-              placeholder="Add analyst notes...">${c.analyst_notes||''}</textarea>
+              placeholder="Add analyst notes…"></textarea>
           </div>
         </div>`;
+      // Set textarea value imperatively to avoid XSS via analyst_notes content
+      const ta = document.getElementById('invPanelNotes');
+      if(ta) ta.value = c.analyst_notes || '';
     }).catch(e=>console.error('Case load error:',e));
 }
 
@@ -1260,7 +1268,7 @@ function _saveInvPanel(caseId){
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({status,analyst_notes:notes})
-  }).then(()=>loadInvestigations()).catch(()=>{});
+  }).then(()=>loadInvestigations()).catch(e=>console.warn('Failed to save investigation panel:',e));
 }
 
 function openCaseFromAlert(alertId, userId, dept, severity){
@@ -1274,7 +1282,7 @@ function openCaseFromAlert(alertId, userId, dept, severity){
       showSection('Investigations');
       loadInvestigations();
     }
-  }).catch(()=>{});
+  }).catch(e=>console.warn('Failed to create investigation case:',e));
 }
 
 // ══════════════════════════════════════════════════════
