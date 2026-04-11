@@ -31,6 +31,8 @@ from nexon_psychometrics           import load_nexon_profiles
 from analytics import CounterfactualEngine, ConfidenceEngine
 _cf_engine   = CounterfactualEngine()
 _conf_engine = ConfidenceEngine()
+from escalation import EscalationEngine
+_escalation = EscalationEngine()
 from pathlib import Path
 import numpy as np
 import json as _json
@@ -118,6 +120,8 @@ fe_eng   = FeatureEngineering()
 model    = AnomalyDetectionModel()
 xai      = ExplainabilityEngine()
 db       = DatabaseManager()
+_escalation.set_db(db)
+_escalation.start()
 
 CERT_DIR     = Path.home() / "Downloads" / "r4.2"
 psych_loaded = init_psychometrics(CERT_DIR)
@@ -311,6 +315,8 @@ def _process_event(raw):
         "description":raw.get("description",""),
     }
     _broadcast_sse(pay)
+    # Escalation
+    _escalation.enqueue({**pay, "triggered_rules": result["triggered_rules"]})
     return {**pay,"is_anomaly":result["is_anomaly"],"log_id":log.log_id,"timestamp":log.timestamp.isoformat()}
 
 
@@ -801,6 +807,83 @@ def recent_events():
             "file_name":     file_name,
         })
     return jsonify({"count": len(events), "events": events}), 200
+
+
+# ── Escalation routes ─────────────────────────────────────────────────────────
+
+@app.get("/api/escalation/config")
+def get_escalation_config():
+    cfg = dict(_escalation.config)
+    cfg.pop("smtp_password", None)   # never send password back to browser
+    return jsonify(cfg), 200
+
+@app.put("/api/escalation/config")
+def update_escalation_config():
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"error": "JSON body required"}), 400
+    _escalation.update_config(body)
+    cfg = dict(_escalation.config)
+    cfg.pop("smtp_password", None)
+    return jsonify({"message": "Escalation config saved", "config": cfg}), 200
+
+@app.post("/api/escalation/test")
+def test_escalation():
+    result = _escalation.send_test_email()
+    code = 200 if result["status"] in ("sent", "skipped") else 500
+    return jsonify(result), code
+
+@app.get("/api/escalation/log")
+def escalation_log():
+    limit = min(int(request.args.get("limit", 50)), 200)
+    entries = db.get_escalation_log(limit=limit)
+    return jsonify({"count": len(entries), "entries": entries}), 200
+
+
+# ── Investigations routes ──────────────────────────────────────────────────────
+
+@app.post("/api/investigations")
+def create_investigation():
+    import uuid as _uuid
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    case_id = "case_" + str(_uuid.uuid4())[:8]
+    db.create_investigation(
+        case_id    = case_id,
+        alert_id   = body.get("alert_id", ""),
+        user_id    = user_id,
+        department = body.get("department", ""),
+        severity   = body.get("severity", "open"),
+    )
+    return jsonify({"case_id": case_id, "status": "open"}), 201
+
+@app.get("/api/investigations")
+def list_investigations():
+    status  = request.args.get("status", "")
+    user_id = request.args.get("user_id", "")
+    limit   = min(int(request.args.get("limit", 100)), 200)
+    cases   = db.list_investigations(status=status, user_id=user_id, limit=limit)
+    open_count = sum(1 for _ in db.list_investigations(status="open", limit=200))
+    return jsonify({"count": len(cases), "open_count": open_count, "cases": cases}), 200
+
+@app.get("/api/investigations/<case_id>")
+def get_investigation(case_id):
+    case = db.get_investigation(case_id)
+    if not case:
+        return jsonify({"error": "Case not found"}), 404
+    return jsonify(case), 200
+
+@app.patch("/api/investigations/<case_id>")
+def update_investigation(case_id):
+    body = request.get_json(silent=True) or {}
+    status        = body.get("status", "")
+    analyst_notes = body.get("analyst_notes")
+    ok = db.update_investigation(case_id, status=status, analyst_notes=analyst_notes)
+    if not ok:
+        return jsonify({"error": "Invalid update or case not found"}), 400
+    return jsonify({"case_id": case_id, "updated": True}), 200
 
 
 @app.get("/api/stream")
