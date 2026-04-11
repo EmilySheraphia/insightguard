@@ -687,7 +687,7 @@ def _detect_arcs(events: list) -> list:
                 usb_ts = datetime.fromisoformat(ev["timestamp"].replace("Z",""))
             except Exception:
                 continue
-            for j in range(max(0, i - 5), i):
+            for j in range(0, i):
                 prev = events[j]
                 if prev["activity_type"] == "file_access":
                     try:
