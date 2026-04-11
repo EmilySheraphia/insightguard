@@ -831,6 +831,7 @@ function doLogout(){
 //  HTML ESCAPE HELPER
 // ══════════════════════════════════════════════════════
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+const _tlEventRegistry=[];
 
 // ══════════════════════════════════════════════════════
 //  SECTION NAVIGATION
@@ -1368,6 +1369,7 @@ function _renderSessions(sessions){
     el.innerHTML='<div style="text-align:center;padding:60px;color:var(--text-muted)">No sessions found for this user in the selected period</div>';
     return;
   }
+  _tlEventRegistry.length=0; // clear registry for new render
   const sevCol={normal:'#3fb950',suspicious:'#e3b341',high_risk:'#db6d28',critical:'#f85149'};
   el.innerHTML=sessions.map(sess=>_renderOneSession(sess, sevCol)).join('');
 }
@@ -1389,7 +1391,8 @@ function _renderOneSession(sess, sevCol){
     const cy=(ROW_H/2).toFixed(1);
     const col=sevCol[ev.severity]||'#58a6ff';
     const tip=`${(ev.timestamp||'').slice(11,19)} | ${ev.activity_type} | Score: ${ev.risk_score}${ev.file_name?' | '+ev.file_name:''}`;
-    return `<circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="${col}" stroke="var(--surface)" stroke-width="2" style="cursor:pointer" onclick='openModal(${JSON.stringify(ev)})'><title>${tip}</title></circle>`;
+    const idx=_tlEventRegistry.push(ev)-1;
+    return `<circle cx="${cx}" cy="${cy}" r="${DOT_R}" fill="${col}" stroke="var(--surface)" stroke-width="2" style="cursor:pointer" onclick="openModal(_tlEventRegistry[${idx}])"><title>${tip}</title></circle>`;
   }).join('');
 
   const logIdToX={};
