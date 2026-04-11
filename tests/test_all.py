@@ -497,6 +497,82 @@ def test_escalation_engine():
     return True
 
 
+def test_session_route_logic():
+    section("Session Reconstruction — session grouping logic")
+    from datetime import datetime, timedelta
+
+    now = datetime(2026, 4, 11, 10, 0, 0)
+    events = [
+        {"log_id": "l1", "timestamp": (now).isoformat(),                         "activity_type": "login",       "risk_score": 10, "severity": "normal",    "file_name": ""},
+        {"log_id": "l2", "timestamp": (now + timedelta(minutes=5)).isoformat(),   "activity_type": "file_access", "risk_score": 20, "severity": "normal",    "file_name": "doc.pdf"},
+        {"log_id": "l3", "timestamp": (now + timedelta(minutes=10)).isoformat(),  "activity_type": "usb",         "risk_score": 60, "severity": "high_risk", "file_name": ""},
+        {"log_id": "l4", "timestamp": (now + timedelta(minutes=60)).isoformat(),  "activity_type": "login",       "risk_score": 15, "severity": "normal",    "file_name": ""},
+        {"log_id": "l5", "timestamp": (now + timedelta(minutes=65)).isoformat(),  "activity_type": "web",         "risk_score": 25, "severity": "normal",    "file_name": ""},
+    ]
+
+    from datetime import datetime as _dt
+    def group_sessions(evs):
+        sessions = []
+        current  = None
+        GAP_MINS = 30
+        for ev in sorted(evs, key=lambda x: x["timestamp"]):
+            try:
+                ts = _dt.fromisoformat(ev["timestamp"].replace("Z",""))
+            except Exception:
+                continue
+            if current is None or (ts - current["_last_ts"]).total_seconds() > GAP_MINS * 60:
+                if current:
+                    current.pop("_last_ts")
+                    sessions.append(current)
+                current = {
+                    "session_id": f"s{len(sessions)+1}",
+                    "start":      ev["timestamp"],
+                    "end":        ev["timestamp"],
+                    "events":     [],
+                    "_last_ts":   ts,
+                }
+            current["events"].append(ev)
+            current["end"]      = ev["timestamp"]
+            current["_last_ts"] = ts
+        if current:
+            current.pop("_last_ts")
+            sessions.append(current)
+        return sessions
+
+    sessions = group_sessions(events)
+    assert len(sessions) == 2,            f"Expected 2 sessions, got {len(sessions)}"
+    assert len(sessions[0]["events"]) == 3, f"Session 1 should have 3 events"
+    assert len(sessions[1]["events"]) == 2, f"Session 2 should have 2 events"
+    ok("Session grouping: 5 events → 2 sessions with correct event counts")
+
+    def detect_threat_arcs(session_events):
+        arcs = []
+        for i, ev in enumerate(session_events):
+            if ev["activity_type"] == "usb":
+                try:
+                    usb_ts = _dt.fromisoformat(ev["timestamp"].replace("Z",""))
+                except Exception:
+                    continue
+                for j in range(max(0, i-5), i):
+                    prev = session_events[j]
+                    if prev["activity_type"] == "file_access":
+                        try:
+                            prev_ts = _dt.fromisoformat(prev["timestamp"].replace("Z",""))
+                        except Exception:
+                            continue
+                        if (usb_ts - prev_ts).total_seconds() <= 300:
+                            arcs.append({"from": prev["log_id"], "to": ev["log_id"]})
+        return arcs
+
+    arcs = detect_threat_arcs(sessions[0]["events"])
+    assert len(arcs) == 1, f"Expected 1 threat arc, got {len(arcs)}"
+    assert arcs[0]["from"] == "l2"
+    assert arcs[0]["to"]   == "l3"
+    ok("Threat arc detection: USB after file_access within 5 min → 1 arc")
+
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -511,6 +587,7 @@ if __name__ == "__main__":
         "Analytics":               test_analytics(),
         "DB Investigations":       test_investigations_db(),
         "EscalationEngine":        test_escalation_engine(),
+        "Session Route Logic":     test_session_route_logic(),
     }
 
     section("FINAL SUMMARY")

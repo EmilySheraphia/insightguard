@@ -678,6 +678,143 @@ def user_timeline(user_id):
                     "timeline":db.get_user_timeline(user_id.lower(),50),
                     "alerts":db.get_alerts(user_id=user_id.lower(),limit=20)}),200
 
+def _detect_arcs(events: list) -> list:
+    """Find USB-after-file_access threat arcs within 5 minutes."""
+    arcs = []
+    for i, ev in enumerate(events):
+        if ev["activity_type"] == "usb":
+            try:
+                usb_ts = datetime.fromisoformat(ev["timestamp"].replace("Z",""))
+            except Exception:
+                continue
+            for j in range(max(0, i - 5), i):
+                prev = events[j]
+                if prev["activity_type"] == "file_access":
+                    try:
+                        prev_ts = datetime.fromisoformat(prev["timestamp"].replace("Z",""))
+                    except Exception:
+                        continue
+                    if (usb_ts - prev_ts).total_seconds() <= 300:
+                        arcs.append({"from": prev["log_id"], "to": ev["log_id"],
+                                     "label": "USB after file access"})
+    return arcs
+
+@app.get("/api/users/<user_id>/session")
+def user_sessions(user_id):
+    from datetime import timedelta as _td
+    import sqlite3 as _sq
+    days   = request.args.get("days", 7, type=int)
+    since  = (datetime.now(timezone.utc) - _td(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    uid    = user_id.lower()
+
+    with _sq.connect(db.db_path) as con:
+        con.row_factory = _sq.Row
+        rows = con.execute("""
+            SELECT al.log_id, al.timestamp, al.activity_type, al.details_json,
+                   ar.risk_score, ar.severity, ar.triggered_rules
+            FROM activity_logs al
+            LEFT JOIN anomaly_results ar ON ar.log_id = al.log_id
+            WHERE al.user_id = ? AND al.timestamp >= ?
+            ORDER BY al.timestamp ASC
+        """, (uid, since)).fetchall()
+
+    GAP_SECS = 30 * 60
+    sessions = []
+    current  = None
+
+    for row in rows:
+        try:
+            ts = datetime.fromisoformat(row["timestamp"].replace("Z",""))
+        except Exception:
+            continue
+
+        rules = []
+        try:
+            rules = _json.loads(row["triggered_rules"] or "[]")
+        except Exception:
+            pass
+
+        file_name = ""
+        try:
+            d = _json.loads(row["details_json"] or "{}")
+            raw = d.get("file_path","") or d.get("file_name","")
+            if raw:
+                file_name = raw.split("/")[-1].split("\\")[-1]
+        except Exception:
+            pass
+
+        event = {
+            "log_id":          row["log_id"],
+            "timestamp":       row["timestamp"],
+            "activity_type":   row["activity_type"] or "login",
+            "severity":        row["severity"] or "normal",
+            "risk_score":      row["risk_score"] or 0,
+            "file_name":       file_name,
+            "triggered_rules": rules,
+        }
+
+        if current is None or (ts - current["_last_ts"]).total_seconds() > GAP_SECS:
+            if current:
+                current.pop("_last_ts")
+                current["threat_arcs"] = _detect_arcs(current["events"])
+                sessions.append(current)
+            current = {
+                "session_id": f"s{len(sessions)+1}",
+                "start":      row["timestamp"],
+                "end":        row["timestamp"],
+                "events":     [],
+                "_last_ts":   ts,
+            }
+
+        current["events"].append(event)
+        current["end"]      = row["timestamp"]
+        current["_last_ts"] = ts
+
+    if current:
+        current.pop("_last_ts")
+        current["threat_arcs"] = _detect_arcs(current["events"])
+        sessions.append(current)
+
+    return jsonify({"user_id": uid, "days": days, "sessions": sessions}), 200
+
+@app.get("/api/users/<user_id>/trajectory")
+def user_trajectory(user_id):
+    from datetime import timedelta as _td
+    import sqlite3 as _sq
+    days  = request.args.get("days", 7, type=int)
+    since = (datetime.now(timezone.utc) - _td(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    uid   = user_id.lower()
+
+    with _sq.connect(db.db_path) as con:
+        con.row_factory = _sq.Row
+        rows = con.execute("""
+            SELECT al.timestamp, al.activity_type,
+                   ar.risk_score, ar.severity
+            FROM anomaly_results ar
+            JOIN activity_logs al ON ar.log_id = al.log_id
+            WHERE ar.user_id = ? AND al.timestamp >= ?
+            ORDER BY al.timestamp ASC
+        """, (uid, since)).fetchall()
+
+    with profile_lock:
+        profile = user_profiles.get(uid, {})
+    events_seen = int(profile.get("pub_events_seen", 0))
+
+    points = []
+    for row in rows:
+        score = row["risk_score"] or 0
+        conf  = _conf_engine.score(events_seen=events_seen, risk_score=score)
+        points.append({
+            "timestamp":        row["timestamp"],
+            "risk_score":       score,
+            "severity":         row["severity"] or "normal",
+            "activity_type":    row["activity_type"] or "login",
+            "confidence_lower": conf["lower"],
+            "confidence_upper": conf["upper"],
+        })
+
+    return jsonify({"user_id": uid, "points": points}), 200
+
 @app.get("/api/alerts")
 def get_alerts():
     alerts=db.get_alerts(severity=request.args.get("severity",""),
