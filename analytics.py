@@ -22,6 +22,8 @@ class CounterfactualEngine:
     Returns top-3 by abs(delta), descending.
     """
 
+    UEBA_WEIGHT = 0.30
+
     PERTURBATIONS = [
         ("during_working_hours", "If this happened during working hours",
          {"is_off_hours": 0}),
@@ -46,8 +48,14 @@ class CounterfactualEngine:
     def explain(self, feature_dict: dict, original_score: int) -> list[dict]:
         """
         Return top-3 counterfactuals by absolute score delta.
-        Only includes perturbations where at least one feature value would actually change.
+        Only includes perturbations where at least one feature value would actually change
+        and the delta is non-zero. delta is expressed in composite score space
+        (UEBA delta × UEBA_WEIGHT=0.30), holding IF and LOF contributions constant.
         """
+        # Compute original UEBA score once
+        orig_fv = FeatureVector(**{k: feature_dict.get(k, 0) for k in FeatureVector.COLUMNS})
+        orig_ueba, _ = _ueba.score(orig_fv)
+
         results = []
         for label, description, changes in self.PERTURBATIONS:
             # Skip if no feature would actually change
@@ -66,24 +74,23 @@ class CounterfactualEngine:
             fv = FeatureVector(**{k: perturbed.get(k, 0) for k in FeatureVector.COLUMNS})
             new_ueba, _ = _ueba.score(fv)
 
-            # Get original UEBA score too for accurate delta
-            orig_fv = FeatureVector(**{k: feature_dict.get(k, 0) for k in FeatureVector.COLUMNS})
-            orig_ueba, _ = _ueba.score(orig_fv)
-
-            # Delta in UEBA space scaled to 0-100
-            delta = new_ueba - orig_ueba
-            new_score_estimate = max(0, min(100, original_score + delta))
-            actual_delta = new_score_estimate - original_score
+            # Scale delta to composite score space (UEBA contributes 30%)
+            ueba_delta = (new_ueba - orig_ueba) * self.UEBA_WEIGHT
+            new_score_estimate = max(0, min(100, original_score + ueba_delta))
+            actual_delta = round(new_score_estimate - original_score)
+            new_score_estimate = original_score + actual_delta  # keep consistent with rounded delta
             pct = round(actual_delta / original_score * 100, 1) if original_score else 0.0
 
             results.append({
                 "label":       label,
                 "description": description,
-                "new_score":   new_score_estimate,
+                "new_score":   max(0, min(100, new_score_estimate)),
                 "delta":       actual_delta,
                 "pct_change":  pct,
             })
 
+        # Filter zero-delta (perturbation had no effect on score)
+        results = [r for r in results if r["delta"] != 0]
         # Sort by abs(delta) descending, return top 3
         results.sort(key=lambda x: abs(x["delta"]), reverse=True)
         return results[:3]
