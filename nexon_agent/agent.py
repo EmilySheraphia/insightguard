@@ -30,6 +30,7 @@ import requests
 import psutil
 
 import config_sync
+from process_monitor import ProcessMonitor
 
 # ── watchdog import (file system monitoring) ─────────────────────────────────
 try:
@@ -869,6 +870,10 @@ def main():
     # Start browser monitor
     browser_mon = BrowserMonitor(cfg)
     browser_mon.start()
+
+    # Start process monitor
+    proc_mon = ProcessMonitor(cfg, enqueue_event, _add_log)
+    proc_mon.start()
 
     # Status bar thread
     status_thread = threading.Thread(target=_status_bar, args=(cfg,), daemon=True, name="status-bar")

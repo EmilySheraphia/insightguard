@@ -552,6 +552,22 @@ def test_agent_modules():
     assert start == 9 and end == 17, "Cache unchanged after failed fetch"
     ok("ConfigSync._do_fetch: unreachable server leaves cache intact")
 
+    # ── ProcessMonitor command classification ──
+    from process_monitor import _classify_cmd, _extract_file_path
+
+    assert _classify_cmd("wevtutil cl System")                  == ("log_clear",      "critical"),   "wevtutil cl"
+    assert _classify_cmd("taskkill /f /pid 1234")               == ("process_kill",   "critical"),   "taskkill /f"
+    assert _classify_cmd("del C:\\Users\\john\\salary.csv")     == ("file",           "suspicious"), "del"
+    assert _classify_cmd("move file.txt C:\\backup\\file.txt")  == ("file",           "suspicious"), "move"
+    assert _classify_cmd("copy C:\\src\\a.txt C:\\dst\\a.txt")  == ("file",           "suspicious"), "copy"
+    assert _classify_cmd("mkdir C:\\Users\\john\\NewFolder")    == ("file",           "normal"),     "mkdir"
+    assert _classify_cmd("powershell.exe -NoProfile")           == ("process_launch", "normal"),     "plain launch"
+    ok("_classify_cmd: all 7 command patterns correct")
+
+    fpath = _extract_file_path("del C:\\Users\\john\\salary.csv")
+    assert fpath == "C:\\Users\\john\\salary.csv", f"got: {fpath}"
+    ok("_extract_file_path: extracts path from del command")
+
     return True
 
 
