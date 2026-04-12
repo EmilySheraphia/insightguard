@@ -20,7 +20,7 @@ import time
 _PATTERNS: dict[str, re.Pattern] = {
     "credential_pattern": re.compile(r'(?i)password\s*[=:]\s*\S+'),
     "api_key_pattern":    re.compile(r'(?i)api[_\-]?key\s*[=:]\s*\S+'),
-    "card_number":        re.compile(r'\b[45][0-9]{15}\b'),
+    "card_number":        re.compile(r'\b(?:\d[ -]?){13,19}\b'),
     "email_list":         re.compile(r'\S+@\S+\.\S+'),
 }
 _VOLUME_THRESHOLD = 500
@@ -46,6 +46,7 @@ class ClipboardMonitor:
         self._log          = add_log_fn
         self._last_hash:  str   = ""
         self._last_hash_time: float = 0.0
+        self._lock         = threading.Lock()
         self._thread       = threading.Thread(
             target=self._run, daemon=True, name="clipboard-monitor"
         )
@@ -82,8 +83,9 @@ class ClipboardMonitor:
         # ── Deduplication ──
         h   = hashlib.sha256(text.encode()).hexdigest()
         now = time.time()
-        if h == self._last_hash and (now - self._last_hash_time) < _DEDUP_SECONDS:
-            return
+        with self._lock:
+            if h == self._last_hash and (now - self._last_hash_time) < _DEDUP_SECONDS:
+                return
 
         # ── Pattern matching ──
         pattern_matched: str | None = None
@@ -104,8 +106,9 @@ class ClipboardMonitor:
             return
 
         # ── Record and fire ──
-        self._last_hash      = h
-        self._last_hash_time = now
+        with self._lock:
+            self._last_hash      = h
+            self._last_hash_time = now
 
         payload = _make_base(self._cfg, "endpoint_agent")
         payload.update({
