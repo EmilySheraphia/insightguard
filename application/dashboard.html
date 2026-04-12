@@ -716,6 +716,27 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
           logins and VPN usage are penalised for a given role.
         </div>
 
+        <!-- Working Hours -->
+        <div class="card">
+          <div class="card-hdr">
+            <h3>Working Hours</h3>
+            <span style="font-size:11px;color:var(--text-muted)">endpoint agent uses these for off-hours detection (24h clock)</span>
+          </div>
+          <div class="card-body" style="display:flex;align-items:center;gap:20px;padding:14px 16px">
+            <div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Start Hour</div>
+              <input class="config-input" id="whStart" type="number" min="0" max="23" value="8" style="width:70px">
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">End Hour</div>
+              <input class="config-input" id="whEnd" type="number" min="0" max="23" value="18" style="width:70px">
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);align-self:flex-end;padding-bottom:8px">
+              Events outside this window are flagged as off-hours activity
+            </div>
+          </div>
+        </div>
+
           <!-- Escalation config -->
           <div class="card" style="margin-top:16px">
             <div class="card-hdr"><h3>Alert Escalation</h3><span style="font-size:11px;color:var(--text-muted)">Gmail SMTP / email alerts</span></div>
@@ -1650,6 +1671,9 @@ function renderConfig(cfg){
   document.getElementById('thSuspicious').value=g.suspicious??45;
   document.getElementById('thHighRisk').value=g.high_risk??60;
   document.getElementById('thCritical').value=g.critical??80;
+  const wh = cfg.working_hours || {};
+  document.getElementById('whStart').value = wh.start ?? 8;
+  document.getElementById('whEnd').value   = wh.end   ?? 18;
   const body=document.getElementById('configBody');
   body.innerHTML='';
   const roles=cfg.roles||{};
@@ -1674,6 +1698,11 @@ function saveConfig(){
     suspicious:parseInt(document.getElementById('thSuspicious').value)||45,
     high_risk:parseInt(document.getElementById('thHighRisk').value)||60,
     critical:parseInt(document.getElementById('thCritical').value)||80,
+  };
+  // Read working hours
+  _rawConfig.working_hours = {
+    start: parseInt(document.getElementById('whStart').value) || 8,
+    end:   parseInt(document.getElementById('whEnd').value)   || 18,
   };
   // Read per-role inputs
   document.querySelectorAll('#configBody input[data-role]').forEach(inp=>{
