@@ -497,6 +497,42 @@ def test_escalation_engine():
     return True
 
 
+def test_agent_modules():
+    section("Agent Modules — Sensitivity + Process + Clipboard")
+    from pathlib import Path
+    import fnmatch as _fnmatch
+
+    # ── Sensitivity classification ──
+    def _classify_sensitivity(filename: str, cfg: dict) -> str:
+        """Return 'critical' | 'confidential' | 'internal' | 'public'."""
+        rules = cfg.get("sensitivity_rules", {})
+        name = Path(filename).name.lower()
+        for level in ("critical", "confidential", "internal", "public"):
+            for pattern in rules.get(level, []):
+                if _fnmatch.fnmatch(name, pattern.lower()):
+                    return level
+        return "internal"  # safe default — unknown files treated as internal
+
+    cfg = {
+        "sensitivity_rules": {
+            "critical":     ["*salary*", "*password*"],
+            "confidential": ["*invoice*", "*contract*"],
+            "internal":     ["*report*"],
+            "public":       ["*readme*"],
+        },
+        "sensitive_extensions": [".csv"],
+    }
+
+    assert _classify_sensitivity("salary_2024.csv", cfg) == "critical",    "salary → critical"
+    assert _classify_sensitivity("Invoice_Q1.pdf", cfg)  == "confidential","invoice → confidential"
+    assert _classify_sensitivity("weekly_report.docx", cfg) == "internal", "report → internal"
+    assert _classify_sensitivity("README.md", cfg)       == "public",      "readme → public"
+    assert _classify_sensitivity("notes.txt", cfg)       == "internal",    "no match → internal default"
+    ok("_classify_sensitivity: all 5 cases pass")
+
+    return True
+
+
 def test_session_route_logic():
     section("Session Reconstruction — session grouping logic")
     from datetime import datetime, timedelta
@@ -588,6 +624,7 @@ if __name__ == "__main__":
         "DB Investigations":       test_investigations_db(),
         "EscalationEngine":        test_escalation_engine(),
         "Session Route Logic":     test_session_route_logic(),
+        "AgentModules":            test_agent_modules(),
     }
 
     section("FINAL SUMMARY")

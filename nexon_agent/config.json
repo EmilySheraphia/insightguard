@@ -1,0 +1,57 @@
+{
+    "server_url": "http://localhost:5000",
+    "user_id": "EMP001",
+    "name": "John Smith",
+    "department": "Engineering",
+    "role": "Software Engineer",
+    "device_id": "NEXON-LAPTOP-001",
+    "poll_interval_seconds": 3,
+    "browser_poll_interval_seconds": 10,
+    "usb_poll_interval_seconds": 5,
+    "monitor_paths": [
+        "%USERPROFILE%\\Documents",
+        "%USERPROFILE%\\Desktop",
+        "%USERPROFILE%\\Downloads"
+    ],
+    "blocked_sites": [
+        "thepiratebay.org",
+        "torrentfreak.com",
+        "kickasstorrents.to",
+        "1337x.to",
+        "extratorrent.cc",
+        "pastebin.com",
+        "mega.nz",
+        "wetransfer.com",
+        "dropbox.com",
+        "drive.google.com",
+        "onedrive.live.com",
+        "4chan.org",
+        "reddit.com/r/learnprogramming",
+        "protonmail.com",
+        "tutanota.com"
+    ],
+    "suspicious_sites": [
+        "tor2web.org",
+        "zeronet.io",
+        "freenet.org",
+        "i2p.net",
+        "vpngate.net",
+        "nordvpn.com",
+        "expressvpn.com",
+        "github.com",
+        "gitlab.com",
+        "pastebin.com",
+        "hastebin.com"
+    ],
+    "sensitive_extensions": [
+        ".xlsx", ".csv", ".pdf", ".docx", ".txt", ".sql",
+        ".db", ".bak", ".zip", ".rar", ".7z", ".tar",
+        ".pst", ".mdb", ".accdb", ".kdbx"
+    ],
+    "sensitivity_rules": {
+        "critical":     ["*salary*", "*payroll*", "*password*", "*credentials*", "*masterkey*", "*backup*", "*private_key*"],
+        "confidential": ["*invoice*", "*contract*", "*financial*", "*hr_data*", "*personal*", "*confidential*"],
+        "internal":     ["*report*", "*project*", "*internal*", "*draft*", "*memo*"],
+        "public":       ["*readme*", "*license*", "*changelog*"]
+    }
+}

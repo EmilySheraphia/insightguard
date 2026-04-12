@@ -15,6 +15,7 @@ import json
 import os
 import platform
 import queue
+import fnmatch
 
 import sqlite3
 import sys
@@ -271,7 +272,21 @@ def _file_size_mb(path: str) -> float:
         return 0.0
 
 
+def _classify_sensitivity(filename: str, cfg: dict) -> str:
+    """Return 'critical' | 'confidential' | 'internal' | 'public'."""
+    rules = cfg.get("sensitivity_rules", {})
+    name = Path(filename).name.lower()
+    for level in ("critical", "confidential", "internal", "public"):
+        for pattern in rules.get(level, []):
+            if fnmatch.fnmatch(name, pattern.lower()):
+                return level
+    return "internal"  # safe default — unknown files treated as internal
+
+
 def _is_sensitive(filename: str, cfg: dict) -> bool:
+    sensitivity = _classify_sensitivity(filename, cfg)
+    if sensitivity in ("critical", "confidential"):
+        return True
     ext = Path(filename).suffix.lower()
     return ext in cfg.get("sensitive_extensions", [])
 
@@ -317,18 +332,20 @@ class _FileEventHandler(FileSystemEventHandler):
         self._debounce[path] = now
 
         size_mb = _file_size_mb(path)
+        sensitivity = _classify_sensitivity(path, self._cfg)
         sensitive = _is_sensitive(path, self._cfg)
         fname = Path(path).name
         payload = _base(self._cfg, "dlp_system")
         payload.update({
-            "source":     "file",
-            "file_path":  path,
-            "file_name":  fname,
-            "operation":  operation,
-            "file_count": 1,
-            "data_mb":    size_mb,
+            "source":      "file",
+            "file_path":   path,
+            "file_name":   fname,
+            "operation":   operation,
+            "file_count":  1,
+            "data_mb":     size_mb,
             "destination": "local",
-            "sensitive":  sensitive,
+            "sensitive":   sensitive,
+            "sensitivity": sensitivity,
         })
         enqueue_event(payload)
         _record_behaviour("file_write", sensitive=sensitive, path=fname)
@@ -430,17 +447,19 @@ class _RecentFilesHandler(FileSystemEventHandler):
 
         # The .lnk filename = opened filename + ".lnk"
         opened_name = Path(path).stem  # strip .lnk
+        sensitivity = _classify_sensitivity(opened_name, self._cfg)
         sensitive = _is_sensitive(opened_name, self._cfg)
         payload = _base(self._cfg, "dlp_system")
         payload.update({
-            "source":     "file",
-            "file_path":  opened_name,
-            "file_name":  opened_name,
-            "operation":  "read",
-            "file_count": 1,
-            "data_mb":    0.01,
+            "source":      "file",
+            "file_path":   opened_name,
+            "file_name":   opened_name,
+            "operation":   "read",
+            "file_count":  1,
+            "data_mb":     0.01,
             "destination": "local",
-            "sensitive":  sensitive,
+            "sensitive":   sensitive,
+            "sensitivity": sensitivity,
         })
         enqueue_event(payload)
         _record_behaviour("file_open", sensitive=sensitive, path=opened_name)
