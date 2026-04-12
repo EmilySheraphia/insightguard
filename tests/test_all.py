@@ -498,20 +498,12 @@ def test_escalation_engine():
 
 
 def test_agent_modules():
-    section("Agent Modules — Sensitivity + Process + Clipboard")
-    from pathlib import Path
-    import fnmatch as _fnmatch
+    section("Agent Modules — Sensitivity")
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "nexon_agent"))
 
     # ── Sensitivity classification ──
-    def _classify_sensitivity(filename: str, cfg: dict) -> str:
-        """Return 'critical' | 'confidential' | 'internal' | 'public'."""
-        rules = cfg.get("sensitivity_rules", {})
-        name = Path(filename).name.lower()
-        for level in ("critical", "confidential", "internal", "public"):
-            for pattern in rules.get(level, []):
-                if _fnmatch.fnmatch(name, pattern.lower()):
-                    return level
-        return "internal"  # safe default — unknown files treated as internal
+    from agent import _classify_sensitivity
 
     cfg = {
         "sensitivity_rules": {

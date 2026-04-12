@@ -285,8 +285,11 @@ def _classify_sensitivity(filename: str, cfg: dict) -> str:
 
 def _is_sensitive(filename: str, cfg: dict) -> bool:
     sensitivity = _classify_sensitivity(filename, cfg)
+    if sensitivity == "public":
+        return False   # explicit public classification wins
     if sensitivity in ("critical", "confidential"):
         return True
+    # "internal" or no rules match — fall back to extension list
     ext = Path(filename).suffix.lower()
     return ext in cfg.get("sensitive_extensions", [])
 
@@ -333,7 +336,8 @@ class _FileEventHandler(FileSystemEventHandler):
 
         size_mb = _file_size_mb(path)
         sensitivity = _classify_sensitivity(path, self._cfg)
-        sensitive = _is_sensitive(path, self._cfg)
+        sensitive   = sensitivity in ("critical", "confidential") or \
+                      Path(path).suffix.lower() in self._cfg.get("sensitive_extensions", [])
         fname = Path(path).name
         payload = _base(self._cfg, "dlp_system")
         payload.update({
@@ -448,7 +452,8 @@ class _RecentFilesHandler(FileSystemEventHandler):
         # The .lnk filename = opened filename + ".lnk"
         opened_name = Path(path).stem  # strip .lnk
         sensitivity = _classify_sensitivity(opened_name, self._cfg)
-        sensitive = _is_sensitive(opened_name, self._cfg)
+        sensitive   = sensitivity in ("critical", "confidential") or \
+                      Path(opened_name).suffix.lower() in self._cfg.get("sensitive_extensions", [])
         payload = _base(self._cfg, "dlp_system")
         payload.update({
             "source":      "file",
