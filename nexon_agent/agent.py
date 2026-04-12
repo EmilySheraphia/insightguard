@@ -148,7 +148,7 @@ def _check_threat_patterns(cfg: dict):
     if is_off_hours and sensitive_opens:
         threats.append({
             "threat_type":  "off_hours_sensitive_access",
-            "description":  f"Sensitive file accessed outside working hours ({hour:02d}:xx)",
+            "description":  f"Sensitive file accessed outside working hours ({datetime.datetime.now().hour:02d}:xx)",
             "file_count":   len(sensitive_opens),
             "files":        [e["path"] for e in sensitive_opens[-3:]],
             "severity_hint": "suspicious",

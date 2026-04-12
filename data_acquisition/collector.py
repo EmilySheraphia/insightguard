@@ -215,6 +215,36 @@ class WebCollector(BaseCollector):
 
 
 # ---------------------------------------------------------------------------
+# Layer 1f: Process Monitoring Collector
+# ---------------------------------------------------------------------------
+
+class ProcessCollector(BaseCollector):
+    """
+    Parses process monitoring events from endpoint agents.
+
+    Input fields:
+      user_id, timestamp, activity_type (process_launch|process_kill|log_clear),
+      process_name, command_line, pid, device_id, off_hours
+    """
+    source_name = "process"
+
+    def collect(self, raw: dict) -> RawActivityLog:
+        return RawActivityLog(
+            user_id       = str(raw["user_id"]),
+            timestamp     = self._ts(raw),
+            activity_type = raw.get("activity_type", "process_launch"),
+            source        = self.source_name,
+            details = {
+                "process_name": raw.get("process_name", ""),
+                "command_line": raw.get("command_line", ""),
+                "pid":          int(raw.get("pid", 0)),
+                "device_id":    raw.get("device_id", "unknown"),
+                "off_hours":    bool(raw.get("off_hours", False)),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Acquisition Router — dispatches to the correct collector
 # ---------------------------------------------------------------------------
 
@@ -230,6 +260,7 @@ class AcquisitionRouter:
         "mail_gateway":   EmailCollector(),
         "endpoint_agent": USBCollector(),
         "web_proxy":      WebCollector(),
+        "process":        ProcessCollector(),
         # convenience aliases
         "login":          LoginCollector(),
         "file":           FileAccessCollector(),

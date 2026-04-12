@@ -40,7 +40,7 @@ def _classify_cmd(cmdline_str: str) -> tuple[str, str]:
     """Return (event_type, severity_override) for a command string."""
     cl = cmdline_str.lower()
 
-    if "wevtutil" in cl and " cl" in cl:
+    if "wevtutil" in cl and re.search(r'\bcl\b|\bclear-log\b', cl):
         return "log_clear", "critical"
     if "clear-eventlog" in cl:
         return "log_clear", "critical"
@@ -156,7 +156,7 @@ class ProcessMonitor:
             })
         else:
             payload.update({
-                "source":            "endpoint_agent",
+                "source":            "process",
                 "activity_type":     event_type,
                 "severity_override": severity,
             })
