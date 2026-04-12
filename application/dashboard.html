@@ -725,11 +725,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
           <div class="card-body" style="display:flex;align-items:center;gap:20px;padding:14px 16px">
             <div>
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Start Hour</div>
-              <input class="config-input" id="whStart" type="number" min="0" max="23" value="8" style="width:70px">
+              <input class="config-input" id="whStart" type="number" min="0" max="23" step="1" value="8" style="width:70px">
             </div>
             <div>
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">End Hour</div>
-              <input class="config-input" id="whEnd" type="number" min="0" max="23" value="18" style="width:70px">
+              <input class="config-input" id="whEnd" type="number" min="0" max="23" step="1" value="18" style="width:70px">
             </div>
             <div style="font-size:11px;color:var(--text-secondary);align-self:flex-end;padding-bottom:8px">
               Events outside this window are flagged as off-hours activity
@@ -1701,8 +1701,8 @@ function saveConfig(){
   };
   // Read working hours
   _rawConfig.working_hours = {
-    start: parseInt(document.getElementById('whStart').value) || 8,
-    end:   parseInt(document.getElementById('whEnd').value)   || 18,
+    start: parseInt(document.getElementById('whStart').value) ?? 8,
+    end:   parseInt(document.getElementById('whEnd').value)   ?? 18,
   };
   // Read per-role inputs
   document.querySelectorAll('#configBody input[data-role]').forEach(inp=>{
