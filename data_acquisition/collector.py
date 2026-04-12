@@ -245,6 +245,34 @@ class ProcessCollector(BaseCollector):
 
 
 # ---------------------------------------------------------------------------
+# Layer 1g: Clipboard Collector
+# ---------------------------------------------------------------------------
+
+class ClipboardCollector(BaseCollector):
+    """
+    Parses clipboard monitoring events from endpoint agents.
+
+    Input fields:
+      user_id, timestamp, activity_type (clipboard),
+      char_count, pattern_matched, content_preview
+    """
+    source_name = "clipboard"
+
+    def collect(self, raw: dict) -> RawActivityLog:
+        return RawActivityLog(
+            user_id       = str(raw["user_id"]),
+            timestamp     = self._ts(raw),
+            activity_type = raw.get("activity_type", "clipboard"),
+            source        = self.source_name,
+            details = {
+                "char_count":      int(raw.get("char_count", 0)),
+                "pattern_matched": raw.get("pattern_matched"),
+                "content_preview": raw.get("content_preview", ""),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Acquisition Router — dispatches to the correct collector
 # ---------------------------------------------------------------------------
 
@@ -261,6 +289,7 @@ class AcquisitionRouter:
         "endpoint_agent": USBCollector(),
         "web_proxy":      WebCollector(),
         "process":        ProcessCollector(),
+        "clipboard":      ClipboardCollector(),
         # convenience aliases
         "login":          LoginCollector(),
         "file":           FileAccessCollector(),

@@ -64,9 +64,10 @@ def start(server_url: str, local_fallback: dict) -> None:
     Safe to call multiple times — only the first call starts the thread.
     """
     global _started
-    if _started:
-        return
-    _started = True
+    with _lock:
+        if _started:
+            return
+        _started = True
     _init_cache(local_fallback)
     _do_fetch(server_url)   # best-effort on startup
     t = threading.Thread(

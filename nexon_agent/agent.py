@@ -377,15 +377,17 @@ class _FileEventHandler(FileSystemEventHandler):
         dest = getattr(event, "dest_path", "unknown")
         size_mb = _file_size_mb(dest)
         sensitive = _is_sensitive(path, self._cfg)
+        sensitivity = _classify_sensitivity(path, self._cfg)
         payload = _base(self._cfg, "dlp_system")
         payload.update({
-            "source":     "file",
-            "file_path":  path,
-            "operation":  "copy",
-            "file_count": 1,
-            "data_mb":    size_mb,
+            "source":      "file",
+            "file_path":   path,
+            "operation":   "copy",
+            "file_count":  1,
+            "data_mb":     size_mb,
             "destination": dest,
-            "sensitive":  sensitive,
+            "sensitive":   sensitive,
+            "sensitivity": sensitivity,
         })
         enqueue_event(payload)
         colour = Y if sensitive else DIM

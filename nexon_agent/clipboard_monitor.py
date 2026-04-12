@@ -110,7 +110,7 @@ class ClipboardMonitor:
             self._last_hash      = h
             self._last_hash_time = now
 
-        payload = _make_base(self._cfg, "endpoint_agent")
+        payload = _make_base(self._cfg, "clipboard")
         payload.update({
             "activity_type":   "clipboard",
             "char_count":      len(text),

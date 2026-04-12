@@ -234,7 +234,8 @@ def _sim(level):
     # Use real time for timestamp/storage; keep simulated hour in feature vector
     # so IF/LOF score against the scenario's intended time pattern
     _now = datetime.now(timezone.utc).replace(tzinfo=None)
-    fv_dict["is_off_hours"] = int(not (8 <= fv_dict["hour"] < 18))
+    _wh = _role_config.get("working_hours", {"start": 8, "end": 18})
+    fv_dict["is_off_hours"] = int(not (_wh.get("start", 8) <= fv_dict["hour"] < _wh.get("end", 18)))
     result = _full_score(fv_dict, user["id"])
     atype  = _EVENT_NAMES.get(fv_dict["event_type_code"],"login")
     uid    = user["id"]
