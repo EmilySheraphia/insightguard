@@ -8,6 +8,7 @@
     "poll_interval_seconds": 3,
     "browser_poll_interval_seconds": 10,
     "usb_poll_interval_seconds": 5,
+    "working_hours": {"start": 8, "end": 18},
     "monitor_paths": [
         "%USERPROFILE%\\Documents",
         "%USERPROFILE%\\Desktop",

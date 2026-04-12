@@ -29,6 +29,8 @@ from pathlib import Path
 import requests
 import psutil
 
+import config_sync
+
 # ── watchdog import (file system monitoring) ─────────────────────────────────
 try:
     from watchdog.observers import Observer
@@ -127,8 +129,7 @@ def _check_threat_patterns(cfg: dict):
     usb_inserts      = [e for e in window if e["type"] == "usb_insert"]
     usb_transfers    = [e for e in window if e["type"] == "usb_transfer"]
     blocked_visits   = [e for e in window if e["type"] == "blocked_site"]
-    hour = datetime.datetime.now().hour
-    is_off_hours = hour < 8 or hour >= 18
+    is_off_hours = config_sync.is_off_hours()
 
     threats = []
 
@@ -846,6 +847,10 @@ def main():
     print(f"  {G}Server:{RST}     {cfg['server_url']}")
     print(f"  {G}Device:{RST}     {cfg['device_id']}")
     print(f"\n{DIM}{'─'*60}{RST}\n")
+
+    # Start config sync (working hours from server)
+    config_sync.start(cfg["server_url"], cfg)
+    _add_log(f"{G}[CONFIG SYNC]{RST} Working hours synced from server")
 
     # Start event sender thread
     sender = threading.Thread(target=_sender_thread, args=(cfg,), daemon=True, name="event-sender")

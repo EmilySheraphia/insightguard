@@ -531,6 +531,27 @@ def test_agent_modules():
     assert not _is_sensitive("README.csv", cfg_ext), "public file must not be sensitive even with .csv ext"
     ok("_is_sensitive: public classification overrides sensitive extension")
 
+    # ── ConfigSync fallback ──
+    import config_sync
+
+    # Reset module cache to known state
+    with config_sync._lock:
+        config_sync._cache["working_hours"] = {"start": 8, "end": 18}
+
+    start, end = config_sync.get_working_hours()
+    assert start == 8 and end == 18, f"Expected (8,18), got ({start},{end})"
+    ok("ConfigSync.get_working_hours: returns default (8, 18)")
+
+    config_sync._init_cache({"working_hours": {"start": 9, "end": 17}})
+    start, end = config_sync.get_working_hours()
+    assert start == 9 and end == 17, f"Expected (9,17), got ({start},{end})"
+    ok("ConfigSync._init_cache: applies local fallback override")
+
+    config_sync._do_fetch("http://localhost:1")   # unreachable — should not crash
+    start, end = config_sync.get_working_hours()
+    assert start == 9 and end == 17, "Cache unchanged after failed fetch"
+    ok("ConfigSync._do_fetch: unreachable server leaves cache intact")
+
     return True
 
 
