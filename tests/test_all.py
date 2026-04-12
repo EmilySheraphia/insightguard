@@ -522,6 +522,15 @@ def test_agent_modules():
     assert _classify_sensitivity("notes.txt", cfg)       == "internal",    "no match → internal default"
     ok("_classify_sensitivity: all 5 cases pass")
 
+    # Verify _is_sensitive respects public classification (even with sensitive extension)
+    from agent import _is_sensitive
+    cfg_ext = {
+        "sensitivity_rules": {"critical": [], "confidential": [], "internal": [], "public": ["*readme*"]},
+        "sensitive_extensions": [".csv"],
+    }
+    assert not _is_sensitive("README.csv", cfg_ext), "public file must not be sensitive even with .csv ext"
+    ok("_is_sensitive: public classification overrides sensitive extension")
+
     return True
 
 

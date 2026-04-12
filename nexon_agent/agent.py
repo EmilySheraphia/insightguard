@@ -336,8 +336,10 @@ class _FileEventHandler(FileSystemEventHandler):
 
         size_mb = _file_size_mb(path)
         sensitivity = _classify_sensitivity(path, self._cfg)
-        sensitive   = sensitivity in ("critical", "confidential") or \
-                      Path(path).suffix.lower() in self._cfg.get("sensitive_extensions", [])
+        sensitive   = sensitivity != "public" and (
+                          sensitivity in ("critical", "confidential") or
+                          Path(path).suffix.lower() in self._cfg.get("sensitive_extensions", [])
+                      )
         fname = Path(path).name
         payload = _base(self._cfg, "dlp_system")
         payload.update({
@@ -452,8 +454,10 @@ class _RecentFilesHandler(FileSystemEventHandler):
         # The .lnk filename = opened filename + ".lnk"
         opened_name = Path(path).stem  # strip .lnk
         sensitivity = _classify_sensitivity(opened_name, self._cfg)
-        sensitive   = sensitivity in ("critical", "confidential") or \
-                      Path(opened_name).suffix.lower() in self._cfg.get("sensitive_extensions", [])
+        sensitive   = sensitivity != "public" and (
+                          sensitivity in ("critical", "confidential") or
+                          Path(opened_name).suffix.lower() in self._cfg.get("sensitive_extensions", [])
+                      )
         payload = _base(self._cfg, "dlp_system")
         payload.update({
             "source":      "file",
