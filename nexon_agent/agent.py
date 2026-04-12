@@ -31,6 +31,7 @@ import psutil
 
 import config_sync
 from process_monitor import ProcessMonitor
+from clipboard_monitor import ClipboardMonitor
 
 # ── watchdog import (file system monitoring) ─────────────────────────────────
 try:
@@ -874,6 +875,10 @@ def main():
     # Start process monitor
     proc_mon = ProcessMonitor(cfg, enqueue_event, _add_log)
     proc_mon.start()
+
+    # Start clipboard monitor
+    clip_mon = ClipboardMonitor(cfg, enqueue_event, _add_log)
+    clip_mon.start()
 
     # Status bar thread
     status_thread = threading.Thread(target=_status_bar, args=(cfg,), daemon=True, name="status-bar")

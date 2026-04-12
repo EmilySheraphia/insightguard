@@ -568,6 +568,58 @@ def test_agent_modules():
     assert fpath == "C:\\Users\\john\\salary.csv", f"got: {fpath}"
     ok("_extract_file_path: extracts path from del command")
 
+    # ── ClipboardMonitor pattern detection ──
+    from clipboard_monitor import ClipboardMonitor
+
+    events_fired = []
+    cm = ClipboardMonitor(
+        cfg={"user_id": "test", "department": "IT", "role": "Analyst",
+             "device_id": "TEST-01"},
+        enqueue_fn=lambda p: events_fired.append(p),
+        add_log_fn=lambda _: None,
+    )
+
+    # Volume trigger
+    cm._check("A" * 600)
+    assert events_fired and events_fired[-1]["pattern_matched"] == "volume", "volume trigger"
+    ok("ClipboardMonitor: volume (>500 chars) triggers event")
+
+    # Credential pattern
+    events_fired.clear()
+    cm._last_hash = ""   # reset dedup
+    cm._check("db_password=hunter2 host=prod.db.internal")
+    assert events_fired and events_fired[-1]["pattern_matched"] == "credential_pattern", "credential pattern"
+    ok("ClipboardMonitor: credential_pattern triggers event")
+
+    # API key pattern
+    events_fired.clear()
+    cm._last_hash = ""
+    cm._check("api_key=sk-abc123xyz987")
+    assert events_fired and events_fired[-1]["pattern_matched"] == "api_key_pattern", "api key"
+    ok("ClipboardMonitor: api_key_pattern triggers event")
+
+    # Email list
+    events_fired.clear()
+    cm._last_hash = ""
+    cm._check("alice@corp.com\nbob@corp.com\ncharlie@corp.com")
+    assert events_fired and events_fired[-1]["pattern_matched"] == "email_list", "email list"
+    ok("ClipboardMonitor: email_list (3+ emails) triggers event")
+
+    # Deduplication — same content within 60 s should not re-fire
+    events_fired.clear()
+    # (last_hash is now set from the email_list check — same text)
+    cm._check("alice@corp.com\nbob@corp.com\ncharlie@corp.com")
+    assert len(events_fired) == 0, "dedup failed — same content fired twice"
+    ok("ClipboardMonitor: dedup suppresses same content within 60 s")
+
+    # Content preview truncated to 80 chars
+    events_fired.clear()
+    cm._last_hash = ""
+    long_text = "password=x " + "B" * 200
+    cm._check(long_text)
+    assert len(events_fired[-1]["content_preview"]) <= 80, "preview not truncated"
+    ok("ClipboardMonitor: content_preview truncated to 80 chars")
+
     return True
 
 
