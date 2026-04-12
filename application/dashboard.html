@@ -1024,8 +1024,8 @@ function addLogRow(d){
   const sev=d.severity||'normal';
   const time=new Date(d.timestamp||Date.now()).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const tr=document.createElement('tr');
-  const fname = d.file_name||(d.files&&d.files.length?d.files[0]:'')||'';
-  const fnameDisplay = fname ? `<span style="font-size:10px;font-family:var(--mono);color:var(--text-secondary)" title="${fname}">${fname.length>22?fname.slice(0,20)+'…':fname}</span>` : '<span style="color:var(--text-muted)">—</span>';
+  const fname = d.file_name||(d.files&&d.files.length?d.files[0]:'')||d.site_name||'';
+  const fnameDisplay = fname ? `<span style="font-size:10px;font-family:var(--mono);color:var(--text-secondary)" title="${esc(d.page_title||fname)}">${esc(fname.length>22?fname.slice(0,20)+'…':fname)}</span>` : '<span style="color:var(--text-muted)">—</span>';
   tr.innerHTML=`
     <td class="mono" style="color:var(--text-muted)">${time}</td>
     <td class="mono">${d.user_id||'—'}</td>
