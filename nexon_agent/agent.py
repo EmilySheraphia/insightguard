@@ -596,24 +596,35 @@ class USBMonitor:
 
         if transferred_files:
             fnames = [os.path.basename(f) for f in transferred_files[:20]]
+
+            # Build per-sensitivity-level counts
+            sensitivity_summary: dict[str, int] = {}
+            for fname in fnames:
+                level = _classify_sensitivity(fname, self._cfg)
+                sensitivity_summary[level] = sensitivity_summary.get(level, 0) + 1
+
             payload = _base(self._cfg, "endpoint_agent")
             payload.update({
-                "source":      "usb",
-                "device_id":   drive,
-                "operation":   "file_transfer",
-                "data_mb":     round(total_mb, 3),
-                "usb_data_mb": round(total_mb, 3),
-                "usb_transfer": True,
-                "file_count":  len(transferred_files),
-                "files":       fnames,
-                "file_name":   ", ".join(fnames[:5]),
-                "file_path":   ", ".join(fnames[:5]),
+                "source":               "usb",
+                "device_id":            drive,
+                "operation":            "file_transfer",
+                "data_mb":              round(total_mb, 3),
+                "usb_data_mb":          round(total_mb, 3),
+                "usb_transfer":         True,
+                "file_count":           len(transferred_files),
+                "files":                fnames,
+                "file_name":            ", ".join(fnames[:5]),
+                "file_path":            ", ".join(fnames[:5]),
+                "sensitivity_summary":  sensitivity_summary,
             })
             enqueue_event(payload)
             for f in fnames:
                 _record_behaviour("usb_transfer", sensitive=_is_sensitive(f, self._cfg), path=f)
             _check_threat_patterns(self._cfg)
-            _add_log(f"{R}[USB TRANSFER]{RST} {len(transferred_files)} file(s) → {drive} ({total_mb:.2f} MB): {', '.join(fnames[:3])}")
+            _add_log(
+                f"{R}[USB TRANSFER]{RST} {len(transferred_files)} file(s) → {drive} "
+                f"({total_mb:.2f} MB): {', '.join(fnames[:3])}"
+            )
 
         self._file_snapshots[drive] = new_snap
 

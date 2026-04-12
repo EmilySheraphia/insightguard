@@ -498,7 +498,7 @@ def test_escalation_engine():
 
 
 def test_agent_modules():
-    section("Agent Modules — Sensitivity")
+    section("Agent Modules — Sensitivity + Process + Clipboard + USB")
     import sys as _sys
     _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "nexon_agent"))
 
@@ -619,6 +619,28 @@ def test_agent_modules():
     cm._check(long_text)
     assert len(events_fired[-1]["content_preview"]) <= 80, "preview not truncated"
     ok("ClipboardMonitor: content_preview truncated to 80 chars")
+
+    # ── USB sensitivity summary ──
+    # Test that _classify_sensitivity builds a correct summary dict
+    files = ["salary_2024.csv", "invoice_q1.pdf", "notes.txt", "password_list.txt"]
+    cfg_usb = {
+        "sensitivity_rules": {
+            "critical":     ["*salary*", "*password*"],
+            "confidential": ["*invoice*"],
+            "internal":     [],
+            "public":       [],
+        },
+        "sensitive_extensions": [],
+    }
+    summary: dict[str, int] = {}
+    for f in files:
+        level = _classify_sensitivity(f, cfg_usb)
+        summary[level] = summary.get(level, 0) + 1
+
+    assert summary.get("critical", 0)     == 2, f"critical count: {summary}"
+    assert summary.get("confidential", 0) == 1, f"confidential count: {summary}"
+    assert summary.get("internal", 0)     == 1, f"internal count (notes.txt): {summary}"
+    ok("USB sensitivity_summary: correct per-level counts")
 
     return True
 
