@@ -850,7 +850,7 @@ def main():
 
     # Start config sync (working hours from server)
     config_sync.start(cfg["server_url"], cfg)
-    _add_log(f"{G}[CONFIG SYNC]{RST} Working hours synced from server")
+    _add_log(f"{G}[CONFIG SYNC]{RST} Working hours loaded (server sync attempted)")
 
     # Start event sender thread
     sender = threading.Thread(target=_sender_thread, args=(cfg,), daemon=True, name="event-sender")

@@ -20,6 +20,7 @@ import requests
 
 _lock: threading.Lock = threading.Lock()
 _cache: dict = {"working_hours": {"start": 8, "end": 18}}
+_started: bool = False
 
 
 def _init_cache(local_fallback: dict) -> None:
@@ -59,7 +60,13 @@ def _poll_loop(server_url: str) -> None:
 
 
 def start(server_url: str, local_fallback: dict) -> None:
-    """Seed cache, do one immediate fetch, then start background thread."""
+    """Seed cache, do one immediate fetch, then start background thread.
+    Safe to call multiple times — only the first call starts the thread.
+    """
+    global _started
+    if _started:
+        return
+    _started = True
     _init_cache(local_fallback)
     _do_fetch(server_url)   # best-effort on startup
     t = threading.Thread(
