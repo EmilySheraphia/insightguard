@@ -758,6 +758,75 @@ def test_ueba_new_rules():
     return True
 
 
+def test_correlation_engine():
+    section("CorrelationEngine — 5 attack pattern detections")
+    from ai_analytics.correlation_engine import CorrelationEngine
+
+    alerts_fired = []
+    engine = CorrelationEngine(on_alert=lambda a: alerts_fired.append(a))
+    uid = "corr_test_user"
+
+    # Pattern 1: sensitive_file_then_usb (5 min window)
+    engine.reset(uid); alerts_fired.clear()
+    engine.process(uid, {"source": "file", "sensitivity": "critical",
+                         "activity_type": "file_access"}, 50.0)
+    score = engine.process(uid, {"source": "usb", "activity_type": "usb"}, 60.0)
+    assert len(alerts_fired) == 1, f"sensitive_file_then_usb: expected 1 alert, got {len(alerts_fired)}"
+    assert alerts_fired[0]["pattern_name"] == "sensitive_file_then_usb"
+    assert score == 75.0, f"score should be 75.0 (60+15), got {score}"
+    ok("sensitive_file_then_usb: fires + boosts score by 15")
+
+    # Pattern 2: sensitive_file_then_cloud (10 min window)
+    engine.reset(uid); alerts_fired.clear()
+    engine.process(uid, {"source": "file", "sensitivity": "confidential",
+                         "activity_type": "file_access"}, 50.0)
+    score = engine.process(uid, {"source": "file", "destination": "gdrive",
+                                 "activity_type": "file_access"}, 55.0)
+    assert len(alerts_fired) == 1, f"sensitive_file_then_cloud: expected 1 alert, got {len(alerts_fired)}"
+    assert alerts_fired[0]["pattern_name"] == "sensitive_file_then_cloud"
+    assert score == 70.0, f"score should be 70.0 (55+15), got {score}"
+    ok("sensitive_file_then_cloud: fires + boosts score by 15")
+
+    # Pattern 3: bulk_file_then_email (10 min window)
+    engine.reset(uid); alerts_fired.clear()
+    engine.process(uid, {"source": "file", "file_count": 10,
+                         "activity_type": "file_access"}, 40.0)
+    score = engine.process(uid, {"source": "email", "direction": "outbound",
+                                 "attachment_mb": 5.0, "activity_type": "email"}, 45.0)
+    assert len(alerts_fired) == 1, f"bulk_file_then_email: expected 1 alert, got {len(alerts_fired)}"
+    assert alerts_fired[0]["pattern_name"] == "bulk_file_then_email"
+    ok("bulk_file_then_email: fires on file_count>=5 + outbound email with attachment")
+
+    # Pattern 4: off_hours_multi_event (30 min window, 3+ events)
+    engine.reset(uid); alerts_fired.clear()
+    engine.process(uid, {"is_off_hours": 1, "activity_type": "file_access"}, 30.0)
+    engine.process(uid, {"is_off_hours": 1, "activity_type": "web"}, 35.0)
+    score = engine.process(uid, {"is_off_hours": 1, "activity_type": "email"}, 40.0)
+    assert len(alerts_fired) == 1, f"off_hours_multi_event: expected 1 alert, got {len(alerts_fired)}"
+    assert alerts_fired[0]["pattern_name"] == "off_hours_multi_event"
+    ok("off_hours_multi_event: fires on 3rd consecutive off-hours event")
+
+    # Pattern 5: process_abuse_then_file (5 min window)
+    engine.reset(uid); alerts_fired.clear()
+    engine.process(uid, {"source": "process", "is_process_abuse": True,
+                         "activity_type": "process_kill"}, 70.0)
+    score = engine.process(uid, {"source": "file", "activity_type": "file_access"}, 50.0)
+    assert len(alerts_fired) == 1, f"process_abuse_then_file: expected 1 alert, got {len(alerts_fired)}"
+    assert alerts_fired[0]["pattern_name"] == "process_abuse_then_file"
+    ok("process_abuse_then_file: fires when process_kill precedes file access")
+
+    # Verify reset() clears all windows
+    engine.reset()
+    alerts_fired.clear()
+    score = engine.process("any_user", {"source": "usb"}, 60.0)
+    assert score == 60.0, "score should be unchanged after reset"
+    assert len(alerts_fired) == 0
+    ok("reset() clears all windows — no false-positive after reset")
+
+    print(f"\n  6/6 passed")
+    return True
+
+
 def test_etl_enrichment():
     section("ETL Enrichment — is_archive + is_process_abuse flags")
     from data_processing.etl_pipeline import enrich_raw
@@ -832,6 +901,7 @@ if __name__ == "__main__":
         "AgentModules":            test_agent_modules(),
         "UEBA New Rules":          test_ueba_new_rules(),
         "ETL Enrichment":          test_etl_enrichment(),
+        "CorrelationEngine":       test_correlation_engine(),
     }
 
     section("FINAL SUMMARY")
