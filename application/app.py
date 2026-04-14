@@ -17,9 +17,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from data_acquisition.collector    import AcquisitionRouter
-from data_processing.etl_pipeline  import ETLPipeline
+from data_processing.etl_pipeline  import ETLPipeline, enrich_raw
 from feature_engineering.extractor import FeatureEngineering, FeatureVector
 from ai_analytics.anomaly_model    import AnomalyDetectionModel
+from ai_analytics.correlation_engine import CorrelationEngine
 from explainability.lime_engine    import ExplainabilityEngine
 from storage.database              import DatabaseManager
 from psychometric_scorer           import init_psychometrics, get_pers_score
@@ -33,6 +34,20 @@ _cf_engine   = CounterfactualEngine()
 _conf_engine = ConfidenceEngine()
 from escalation import EscalationEngine
 _escalation = EscalationEngine()
+
+def _on_correlation_alert(alert: dict) -> None:
+    """Store synthetic correlation alert to DB and broadcast via SSE."""
+    try:
+        lid = "corr_" + str(uuid.uuid4())[:10]
+        db.insert_activity_log(
+            lid, alert["user_id"], alert["timestamp"],
+            "correlation_alert", "correlation", details=alert,
+        )
+        _broadcast_sse(alert)
+    except Exception as _e:
+        print(f"[CorrelationEngine] alert error: {_e}")
+
+correlation_engine = CorrelationEngine(on_alert=_on_correlation_alert)
 from pathlib import Path
 import numpy as np
 import json as _json
@@ -184,11 +199,12 @@ def _critical_fv():
 _EVENT_NAMES = {0:"login",1:"logoff",2:"file_access",3:"email",4:"usb",5:"web"}
 
 
-def _full_score(fv_dict: dict, user_id: str, feature_array=None, role: str = "") -> dict:
+def _full_score(fv_dict: dict, user_id: str, feature_array=None, role: str = "", raw_event: dict = None) -> dict:
     fv = FeatureVector(**{k: fv_dict.get(k,0) for k in FeatureVector.COLUMNS})
     from ai_analytics.anomaly_model import UEBAEngine
     ueba = UEBAEngine()
-    raw_ueba_score, raw_rules = ueba.score(fv)
+    _extra = raw_event if raw_event is not None else fv_dict
+    raw_ueba_score, raw_rules = ueba.score(fv, extra=_extra)
     # Apply role-aware threshold adjustment
     ueba_score, rules = _role_adjusted_ueba(fv_dict, role, raw_ueba_score, raw_rules)
     arr       = fv.to_array() if feature_array is None else feature_array
@@ -270,9 +286,11 @@ def _process_event(raw):
     activity = router.route(raw)
     log      = pipeline.process(activity)
     if not log.is_valid: return {"error":"Unprocessable event"}
+    enrich_raw(raw)
+    raw["is_off_hours"] = int(log.is_off_hours)
     fv      = fe_eng.extractFeatures(log)
     uid     = log.user_id
-    result  = _full_score(fv.to_dict(), uid, fv.to_array(), role=raw.get("role",""))
+    result  = _full_score(fv.to_dict(), uid, fv.to_array(), role=raw.get("role",""), raw_event=raw)
     db.upsert_user(uid, raw.get("department",""), raw.get("role",""))
     db.insert_activity_log(log.log_id, uid, log.timestamp.isoformat(),
                            log.activity_type, log.source, details=fv.to_dict())
@@ -293,6 +311,17 @@ def _process_event(raw):
         final_sev = sev_override
         result["severity"] = sev_override
         result["is_anomaly"] = True
+
+    boosted = correlation_engine.process(uid, raw, result["risk_score"])
+    if int(boosted) > result["risk_score"]:
+        result["risk_score"] = int(boosted)
+        result["severity"] = (
+            "critical"   if boosted >= 80 else
+            "high_risk"  if boosted >= 60 else
+            "suspicious" if boosted >= 45 else "normal"
+        )
+        result["is_anomaly"] = True
+        final_sev = result["severity"]
 
     file_name = raw.get("file_name","") or raw.get("file_path","")
     if "/" in file_name or "\\" in file_name:
@@ -860,6 +889,7 @@ def reset_database():
         con.execute("DELETE FROM users")
     with profile_lock:
         user_profiles.clear()
+    correlation_engine.reset()
     return jsonify({"status": "ok", "message": "All logs cleared"}), 200
 
 
