@@ -774,6 +774,10 @@ def test_correlation_engine():
     assert len(alerts_fired) == 1, f"sensitive_file_then_usb: expected 1 alert, got {len(alerts_fired)}"
     assert alerts_fired[0]["pattern_name"] == "sensitive_file_then_usb"
     assert score == 75.0, f"score should be 75.0 (60+15), got {score}"
+    assert alerts_fired[0]["source"] == "correlation", "alert source should be 'correlation'"
+    assert alerts_fired[0]["activity_type"] == "correlation_alert", "alert activity_type should be 'correlation_alert'"
+    assert alerts_fired[0]["severity"] == "critical", "sensitive_file_then_usb severity should be critical"
+    assert "matched_events" in alerts_fired[0], "alert should contain matched_events"
     ok("sensitive_file_then_usb: fires + boosts score by 15")
 
     # Pattern 2: sensitive_file_then_cloud (10 min window)
@@ -815,13 +819,16 @@ def test_correlation_engine():
     assert alerts_fired[0]["pattern_name"] == "process_abuse_then_file"
     ok("process_abuse_then_file: fires when process_kill precedes file access")
 
-    # Verify reset() clears all windows
-    engine.reset()
+    # Verify reset() clears all windows — prime the pattern, reset, verify it doesn't fire
+    engine.reset(); alerts_fired.clear()
+    engine.process(uid, {"source": "file", "sensitivity": "critical",
+                         "activity_type": "file_access"}, 50.0)
+    engine.reset()    # clear all windows
     alerts_fired.clear()
-    score = engine.process("any_user", {"source": "usb"}, 60.0)
-    assert score == 60.0, "score should be unchanged after reset"
-    assert len(alerts_fired) == 0
-    ok("reset() clears all windows — no false-positive after reset")
+    score = engine.process(uid, {"source": "usb", "activity_type": "usb"}, 60.0)
+    assert score == 60.0, f"score should be unchanged after reset (sensitive_file_then_usb should not fire), got {score}"
+    assert len(alerts_fired) == 0, "no alert should fire after reset clears prior state"
+    ok("reset() clears all windows — pattern does not fire after reset")
 
     print(f"\n  6/6 passed")
     return True
