@@ -39,27 +39,49 @@ class UEBAEngine:
     """13 weighted behavioral rules → 0-100 score."""
 
     RULES = [
-        ("off_hours_login",     12, lambda f: f.event_type_code == 0 and f.is_off_hours),
-        ("high_risk_country",   25, lambda f: f.is_risky_country),
-        ("unknown_country",     10, lambda f: f.is_unknown_country),
-        ("tor_detected",        30, lambda f: f.tor),
-        ("vpn_suspicious",       6, lambda f: f.vpn and f.is_off_hours),
-        ("new_device",           8, lambda f: f.new_device),
-        ("repeated_auth_fail",  12, lambda f: f.failed_attempts >= 3),
-        ("bulk_download",       18, lambda f: f.data_mb >= 200),
-        ("massive_download",    32, lambda f: f.data_mb >= 1500),
-        ("bulk_file_access",    16, lambda f: f.file_count >= 30),
-        ("extreme_file_access", 26, lambda f: f.file_count >= 100),
-        ("usb_exfil",           20, lambda f: f.usb_transfer and f.usb_data_mb >= 50),
-        ("external_email_bulk", 14, lambda f: f.external_email and f.recipient_count >= 5),
-        ("risky_web",           20, lambda f: f.risky_web),
-        ("large_attachment",    12, lambda f: f.attachment_mb >= 25),
+        ("off_hours_login",          12, lambda f: f.event_type_code == 0 and f.is_off_hours),
+        ("high_risk_country",        25, lambda f: f.is_risky_country),
+        ("unknown_country",          10, lambda f: f.is_unknown_country),
+        ("tor_detected",             30, lambda f: f.tor),
+        ("vpn_suspicious",            6, lambda f: f.vpn and f.is_off_hours),
+        ("new_device",                8, lambda f: f.new_device),
+        ("repeated_auth_fail",       12, lambda f: f.failed_attempts >= 3),
+        ("bulk_download",            18, lambda f: f.data_mb >= 200),
+        ("massive_download",         32, lambda f: f.data_mb >= 1500),
+        ("bulk_file_access",         16, lambda f: f.file_count >= 30),
+        ("extreme_file_access",      26, lambda f: f.file_count >= 100),
+        ("usb_inserted",             18, lambda f: f.event_type_code == 4 and f.usb_data_mb == 0),
+        ("usb_exfil",                22, lambda f: f.usb_transfer and f.usb_data_mb >= 10),
+        ("usb_large_exfil",          35, lambda f: f.usb_transfer and f.usb_data_mb >= 50),
+        ("external_email_bulk",      14, lambda f: f.external_email and f.recipient_count >= 5),
+        ("risky_web",                20, lambda f: f.risky_web),
+        ("large_attachment",         12, lambda f: f.attachment_mb >= 25),
+        ("off_hours_file_access",    15, lambda f: f.event_type_code == 2 and f.is_off_hours),
+        ("sensitive_file_bulk",      22, lambda f: f.event_type_code == 2 and f.file_count >= 5),
     ]
 
-    def score(self, fv: FeatureVector) -> tuple[int, list[str]]:
+    EXTRA_RULES = [
+        ("sensitive_file_access",  20, lambda f, e: e.get("sensitivity") in ("critical", "confidential")),
+        ("usb_any",                25, lambda f, e: e.get("source") in ("usb", "endpoint_agent")),
+        ("cloud_upload",           30, lambda f, e: e.get("destination") in ("cloud","gdrive","onedrive","dropbox","s3")
+                                                    or e.get("category") == "cloud_storage"),
+        ("off_hours_boost",        15, lambda f, e: e.get("is_off_hours") in (1, True)),
+        ("archive_created",        28, lambda f, e: e.get("is_archive") is True),
+        ("process_abuse",          35, lambda f, e: e.get("is_process_abuse") is True),
+        ("large_attachment_exfil", 22, lambda f, e: e.get("source") in ("email", "mail_gateway")
+                                                    and e.get("direction") in ("outbound", "sent")
+                                                    and float(e.get("attachment_mb", 0)) >= 10),
+    ]
+
+    def score(self, fv: FeatureVector, extra: dict = None) -> tuple[int, list[str]]:
+        extra = extra or {}
         total, triggered = 0, []
         for label, weight, test in self.RULES:
             if test(fv):
+                total += weight
+                triggered.append(label)
+        for label, weight, test in self.EXTRA_RULES:
+            if test(fv, extra):
                 total += weight
                 triggered.append(label)
         return min(total, 100), triggered

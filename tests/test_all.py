@@ -721,6 +721,43 @@ def test_session_route_logic():
     return True
 
 
+# ─── UEBA New Rules ────────────────────────────────────────────────────────
+
+def test_ueba_new_rules():
+    section("UEBA New Rules — extra param (7 rules)")
+    from ai_analytics.anomaly_model import UEBAEngine
+    from feature_engineering.extractor import FeatureVector
+
+    ueba = UEBAEngine()
+    base = {k: 0 for k in FeatureVector.COLUMNS}
+    fv   = FeatureVector(**base)
+
+    def check(label, extra):
+        _, triggered = ueba.score(fv, extra=extra)
+        assert label in triggered, f"{label} not in triggered={triggered}"
+        ok(f"{label} fires")
+
+    check("sensitive_file_access",  {"sensitivity": "critical"})
+    check("sensitive_file_access",  {"sensitivity": "confidential"})
+    check("usb_any",                {"source": "usb"})
+    check("cloud_upload",           {"destination": "gdrive"})
+    check("off_hours_boost",        {"is_off_hours": 1})
+    check("archive_created",        {"is_archive": True})
+    check("process_abuse",          {"is_process_abuse": True})
+    check("large_attachment_exfil", {"source": "email", "direction": "outbound",
+                                     "attachment_mb": 15})
+
+    _, triggered = ueba.score(fv, extra={})
+    for label in ("sensitive_file_access", "usb_any", "cloud_upload",
+                  "off_hours_boost", "archive_created", "process_abuse",
+                  "large_attachment_exfil"):
+        assert label not in triggered, f"{label} should not fire on empty extra"
+    ok("no new rules fire on empty extra dict")
+
+    print(f"\n  9/9 passed")
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -737,6 +774,7 @@ if __name__ == "__main__":
         "EscalationEngine":        test_escalation_engine(),
         "Session Route Logic":     test_session_route_logic(),
         "AgentModules":            test_agent_modules(),
+        "UEBA New Rules":          test_ueba_new_rules(),
     }
 
     section("FINAL SUMMARY")
