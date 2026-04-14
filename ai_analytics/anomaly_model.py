@@ -36,7 +36,7 @@ from data_processing.etl_pipeline import ProcessedLog
 # ---------------------------------------------------------------------------
 
 class UEBAEngine:
-    """13 weighted behavioral rules → 0-100 score."""
+    """19 FeatureVector rules + 7 extra-signal rules (read from raw event dict) → 0-100 score."""
 
     RULES = [
         ("off_hours_login",          12, lambda f: f.event_type_code == 0 and f.is_off_hours),
