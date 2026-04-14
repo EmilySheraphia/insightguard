@@ -296,13 +296,6 @@ def _process_event(raw):
                            log.activity_type, log.source, details=fv.to_dict())
     db.insert_features("ft_"+log.log_id, uid, log.log_id, fv.to_dict())
     did = "dt_"+log.log_id
-    db.insert_anomaly_result(did, uid, log.log_id, result)
-    _upd(uid, result, raw)
-    aid = None
-    if result["is_anomaly"]:
-        aid = "al_"+log.log_id[:10]
-        db.insert_alert(aid, uid, did, result["severity"], log.activity_type,
-                        "Rules: "+", ".join(result["triggered_rules"][:3]) if result["triggered_rules"] else "Anomaly")
     # Allow agent to force a minimum severity for composite threat events
     sev_override = raw.get("severity_override","")
     _SEV_ORDER = {"normal":0,"suspicious":1,"high_risk":2,"critical":3}
@@ -312,8 +305,9 @@ def _process_event(raw):
         result["severity"] = sev_override
         result["is_anomaly"] = True
 
+    # Correlation pattern check — runs after all score adjustments, before DB write
     boosted = correlation_engine.process(uid, raw, result["risk_score"])
-    if int(boosted) > result["risk_score"]:
+    if boosted > result["risk_score"]:
         result["risk_score"] = int(boosted)
         result["severity"] = (
             "critical"   if boosted >= 80 else
@@ -322,6 +316,15 @@ def _process_event(raw):
         )
         result["is_anomaly"] = True
         final_sev = result["severity"]
+
+    # Store final scores (post-boost) to DB
+    db.insert_anomaly_result(did, uid, log.log_id, result)
+    _upd(uid, result, raw)
+    aid = None
+    if result["is_anomaly"]:
+        aid = "al_"+log.log_id[:10]
+        db.insert_alert(aid, uid, did, result["severity"], log.activity_type,
+                        "Rules: "+", ".join(result["triggered_rules"][:3]) if result["triggered_rules"] else "Anomaly")
 
     file_name = raw.get("file_name","") or raw.get("file_path","")
     if "/" in file_name or "\\" in file_name:
