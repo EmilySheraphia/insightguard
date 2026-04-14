@@ -223,6 +223,38 @@ class ETLPipeline:
 
 
 # ---------------------------------------------------------------------------
+# Raw event enrichment (mutates raw dict in place, no ETL class needed)
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_EXTS = {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"}
+_FILE_SOURCES  = {"file", "dlp_system", "endpoint_agent"}
+
+
+def enrich_raw(raw: dict) -> None:
+    """
+    Add is_archive and is_process_abuse flags to a raw event dict.
+    Mutates in place. Call before scoring in app.py _process_event.
+    """
+    src = raw.get("source", "")
+
+    # is_archive: file-source event whose file_path ends in an archive extension
+    is_archive = False
+    if src in _FILE_SOURCES:
+        fp  = raw.get("file_path", raw.get("file_name", ""))
+        ext = os.path.splitext(fp)[1].lower() if fp else ""
+        is_archive = ext in _ARCHIVE_EXTS or raw.get("operation", "") == "compress"
+    raw["is_archive"] = is_archive
+
+    # is_process_abuse: process kill, log clear, or any process event marked critical
+    is_process_abuse = False
+    if src == "process":
+        atype = raw.get("activity_type", raw.get("event", ""))
+        is_process_abuse = (atype in ("process_kill", "log_clear")
+                            or raw.get("severity", "") == "critical")
+    raw["is_process_abuse"] = is_process_abuse
+
+
+# ---------------------------------------------------------------------------
 # Quick self-test
 # ---------------------------------------------------------------------------
 

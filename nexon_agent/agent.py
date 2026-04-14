@@ -275,6 +275,9 @@ def _file_size_mb(path: str) -> float:
         return 0.0
 
 
+_AGENT_ARCHIVE_EXTS = {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"}
+
+
 def _classify_sensitivity(filename: str, cfg: dict) -> str:
     """Return 'critical' | 'confidential' | 'internal' | 'public'."""
     rules = cfg.get("sensitivity_rules", {})
@@ -355,6 +358,7 @@ class _FileEventHandler(FileSystemEventHandler):
             "destination": "local",
             "sensitive":   sensitive,
             "sensitivity": sensitivity,
+            "is_archive":  os.path.splitext(fname)[1].lower() in _AGENT_ARCHIVE_EXTS,
         })
         enqueue_event(payload)
         _record_behaviour("file_write", sensitive=sensitive, path=fname)
@@ -375,6 +379,7 @@ class _FileEventHandler(FileSystemEventHandler):
             return
         path = event.src_path
         dest = getattr(event, "dest_path", "unknown")
+        dest_filename = os.path.basename(dest)
         size_mb = _file_size_mb(dest)
         sensitive = _is_sensitive(path, self._cfg)
         sensitivity = _classify_sensitivity(path, self._cfg)
@@ -388,6 +393,7 @@ class _FileEventHandler(FileSystemEventHandler):
             "destination": dest,
             "sensitive":   sensitive,
             "sensitivity": sensitivity,
+            "is_archive":  os.path.splitext(dest_filename)[1].lower() in _AGENT_ARCHIVE_EXTS,
         })
         enqueue_event(payload)
         colour = Y if sensitive else DIM
@@ -474,6 +480,7 @@ class _RecentFilesHandler(FileSystemEventHandler):
             "destination": "local",
             "sensitive":   sensitive,
             "sensitivity": sensitivity,
+            "is_archive":  os.path.splitext(opened_name)[1].lower() in _AGENT_ARCHIVE_EXTS,
         })
         enqueue_event(payload)
         _record_behaviour("file_open", sensitive=sensitive, path=opened_name)

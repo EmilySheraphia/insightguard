@@ -758,6 +758,62 @@ def test_ueba_new_rules():
     return True
 
 
+def test_etl_enrichment():
+    section("ETL Enrichment — is_archive + is_process_abuse flags")
+    from data_processing.etl_pipeline import enrich_raw
+
+    # Archive detection: zip file
+    raw = {"source": "file", "file_path": "/home/bob/backup.zip"}
+    enrich_raw(raw)
+    assert raw["is_archive"] is True, "zip should be flagged as archive"
+    ok("is_archive: .zip file flagged")
+
+    # Archive detection: rar file
+    raw2 = {"source": "file", "file_path": "/home/alice/export.rar"}
+    enrich_raw(raw2)
+    assert raw2["is_archive"] is True, "rar should be flagged"
+    ok("is_archive: .rar file flagged")
+
+    # Non-archive file
+    raw3 = {"source": "file", "file_path": "/home/bob/report.pdf"}
+    enrich_raw(raw3)
+    assert raw3["is_archive"] is False, "pdf should not be archive"
+    ok("is_archive: .pdf not flagged")
+
+    # Email source: zip attachment should NOT flag is_archive
+    raw4 = {"source": "email", "file_path": "/tmp/attachment.zip"}
+    enrich_raw(raw4)
+    assert raw4["is_archive"] is False, "email source should not flag is_archive"
+    ok("is_archive: email source not flagged even with .zip path")
+
+    # Process abuse: process_kill
+    raw5 = {"source": "process", "activity_type": "process_kill"}
+    enrich_raw(raw5)
+    assert raw5["is_process_abuse"] is True, "process_kill should flag is_process_abuse"
+    ok("is_process_abuse: process_kill flagged")
+
+    # Process abuse: log_clear
+    raw6 = {"source": "process", "activity_type": "log_clear"}
+    enrich_raw(raw6)
+    assert raw6["is_process_abuse"] is True, "log_clear should flag is_process_abuse"
+    ok("is_process_abuse: log_clear flagged")
+
+    # Not abuse: process_launch
+    raw7 = {"source": "process", "activity_type": "process_launch", "severity": "normal"}
+    enrich_raw(raw7)
+    assert raw7["is_process_abuse"] is False, "process_launch should not flag"
+    ok("is_process_abuse: process_launch not flagged")
+
+    # Process abuse via severity=critical
+    raw8 = {"source": "process", "activity_type": "process_launch", "severity": "critical"}
+    enrich_raw(raw8)
+    assert raw8["is_process_abuse"] is True, "severity=critical process should flag"
+    ok("is_process_abuse: severity=critical process flagged")
+
+    print(f"\n  8/8 passed")
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -775,6 +831,7 @@ if __name__ == "__main__":
         "Session Route Logic":     test_session_route_logic(),
         "AgentModules":            test_agent_modules(),
         "UEBA New Rules":          test_ueba_new_rules(),
+        "ETL Enrichment":          test_etl_enrichment(),
     }
 
     section("FINAL SUMMARY")
