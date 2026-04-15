@@ -3,3 +3,4 @@ watchdog>=3.0.0
 psutil>=5.9.0
 pywin32>=306; sys_platform == "win32"
 pyperclip>=1.8.2
+websockets>=12.0

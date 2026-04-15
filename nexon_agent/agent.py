@@ -1104,6 +1104,10 @@ def main():
     browser_mon = BrowserMonitor(cfg)
     browser_mon.start()
 
+    # Start browser intelligence monitor (incognito + CDP upload/webmail)
+    browser_intel = BrowserIntelligenceMonitor(cfg)
+    browser_intel.start()
+
     # Start process monitor
     proc_mon = ProcessMonitor(cfg, enqueue_event, _add_log)
     proc_mon.start()
