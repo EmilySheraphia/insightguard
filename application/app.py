@@ -12,7 +12,7 @@ Final score pipeline:
 
 from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from datetime import datetime, timezone
-import json, queue, threading, random, time, uuid
+import json, queue, re, threading, random, time, uuid
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -910,7 +910,9 @@ def evidence_upload():
     log_id   = request.form.get("log_id", "")
     ts       = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
     eid      = str(uuid.uuid4())
-    fname    = f"{user_id}_{ts}_{evt_type}.jpg"
+    safe_user  = re.sub(r"[^\w\-]", "_", user_id)
+    safe_event = re.sub(r"[^\w\-]", "_", evt_type)
+    fname    = f"{safe_user}_{ts}_{safe_event}.jpg"
     fpath    = EVIDENCE_DIR / fname
     f.save(str(fpath))
     db.insert_evidence(eid, log_id, user_id, str(fpath), trigger, evt_type, ts)
@@ -932,7 +934,10 @@ def evidence_serve(evidence_id):
     row = db.get_evidence_by_id(evidence_id)
     if not row:
         return jsonify({"error": "not found"}), 404
-    return send_file(row["file_path"], mimetype="image/jpeg")
+    fpath = Path(row["file_path"]).resolve()
+    if not str(fpath).startswith(str(EVIDENCE_DIR.resolve())):
+        return jsonify({"error": "not found"}), 404
+    return send_file(str(fpath), mimetype="image/jpeg")
 
 
 @app.post("/api/explain/counterfactual")
