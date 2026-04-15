@@ -179,7 +179,7 @@ class DatabaseManager:
                     trigger_type TEXT,
                     event_type   TEXT,
                     timestamp    TEXT,
-                    created_at   REAL
+                    created_at   TEXT DEFAULT (datetime('now'))
                 )
             """)
             conn.execute(
@@ -434,12 +434,10 @@ class DatabaseManager:
         with self._lock, self._conn() as conn:
             conn.execute("""
                 INSERT OR IGNORE INTO evidence
-                    (id, log_id, user_id, file_path, trigger_type, event_type,
-                     timestamp, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, log_id, user_id, file_path, trigger_type, event_type, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (evidence_id, log_id, user_id, file_path, trigger_type,
-                  event_type, timestamp,
-                  datetime.utcnow().timestamp()))
+                  event_type, timestamp))
 
     def get_evidence_by_id(self, evidence_id: str) -> dict | None:
         with self._conn() as conn:
