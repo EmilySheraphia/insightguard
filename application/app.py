@@ -10,7 +10,7 @@ Final score pipeline:
   PERS_Score = PUB_Score weighted with Psychometric Risk
 """
 
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from datetime import datetime, timezone
 import json, queue, threading, random, time, uuid
 import sys, os
@@ -55,6 +55,9 @@ import json as _json
 # ── Role-based UEBA threshold config ──────────────────────────────────────────
 _ROLE_CONFIG_PATH = Path(__file__).parent.parent / "storage" / "role_config.json"
 _role_config: dict = {}
+
+EVIDENCE_DIR = Path(__file__).parent.parent / "storage" / "evidence"
+EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 def _load_role_config():
     global _role_config
@@ -894,6 +897,42 @@ def reset_database():
         user_profiles.clear()
     correlation_engine.reset()
     return jsonify({"status": "ok", "message": "All logs cleared"}), 200
+
+
+@app.post("/api/evidence/upload")
+def evidence_upload():
+    if "file" not in request.files:
+        return jsonify({"error": "file required"}), 400
+    f        = request.files["file"]
+    user_id  = request.form.get("user_id", "unknown")
+    trigger  = request.form.get("trigger_type", "")
+    evt_type = request.form.get("event_type", "")
+    log_id   = request.form.get("log_id", "")
+    ts       = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    eid      = str(uuid.uuid4())
+    fname    = f"{user_id}_{ts}_{evt_type}.jpg"
+    fpath    = EVIDENCE_DIR / fname
+    f.save(str(fpath))
+    db.insert_evidence(eid, log_id, user_id, str(fpath), trigger, evt_type, ts)
+    return jsonify({"evidence_id": eid, "status": "ok"}), 200
+
+
+@app.get("/api/evidence/by-event/<log_id>")
+def evidence_by_event(log_id):
+    rows = db.get_evidence_by_event(log_id)
+    return jsonify({"evidence": [
+        {"evidence_id": r["id"], "trigger_type": r["trigger_type"],
+         "event_type": r["event_type"], "timestamp": r["timestamp"]}
+        for r in rows
+    ]}), 200
+
+
+@app.get("/api/evidence/<evidence_id>")
+def evidence_serve(evidence_id):
+    row = db.get_evidence_by_id(evidence_id)
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    return send_file(row["file_path"], mimetype="image/jpeg")
 
 
 @app.post("/api/explain/counterfactual")
