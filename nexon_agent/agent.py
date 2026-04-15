@@ -24,6 +24,7 @@ import time
 import datetime
 import socket
 import ctypes
+import re
 from pathlib import Path
 
 import requests
@@ -821,6 +822,218 @@ class BrowserMonitor:
             _add_log(f"{Y}[SUSPICIOUS]{RST} {_domain(url)} — {cat}")
         else:
             _add_log(f"{C}[WEB]{RST} {_domain(url)} — {cat}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Browser Intelligence Monitor — incognito, file uploads, webmail
+# ══════════════════════════════════════════════════════════════════════════════
+
+_INCOGNITO_FLAGS = {
+    "chrome.exe":  "--incognito",
+    "msedge.exe":  "--inprivate",
+    "firefox.exe": ("-private", "--private-window"),
+}
+
+_WEBMAIL_PROVIDERS = {
+    "mail.google.com":    ("gmail",   " - "),
+    "mail.yahoo.com":     ("yahoo",   " - "),
+    "outlook.live.com":   ("outlook", " - "),
+    "outlook.office.com": ("outlook", " - "),
+    "mail.proton.me":     ("proton",  " | "),
+}
+
+_COMPOSE_PATTERNS = ("#compose", "#sent", "/mail/compose", "/mail/sentitems", "/compose")
+
+_UPLOAD_FILENAME_RE = re.compile(
+    r'Content-Disposition\s*:\s*form-data[^;]*;\s*(?:[^;]*;\s*)?filename\s*=\s*"([^"]+)"',
+    re.IGNORECASE,
+)
+
+
+def _parse_upload_filename(post_data: str) -> str | None:
+    """Return filename from multipart/form-data postData string, or None if absent."""
+    if not post_data:
+        return None
+    m = _UPLOAD_FILENAME_RE.search(post_data)
+    return m.group(1) if m else None
+
+
+def _parse_webmail_title(url: str, title: str) -> dict | None:
+    """Return {"provider", "email_subject", "compose_detected"} if URL is a webmail tab, else None."""
+    from urllib.parse import urlparse
+    domain = urlparse(url).netloc.lower().lstrip("www.")
+    for d, (provider, sep) in _WEBMAIL_PROVIDERS.items():
+        if d in domain:
+            subject = title.split(sep)[0].strip() if (title and sep in title) else ""
+            return {
+                "provider":         provider,
+                "email_subject":    subject,
+                "compose_detected": any(p in url for p in _COMPOSE_PATTERNS),
+            }
+    return None
+
+
+class BrowserIntelligenceMonitor:
+    """
+    Two-thread browser intelligence monitor:
+      - psutil thread: incognito detection every 5 s + webmail title polling via CDP /json
+      - CDP thread:    asyncio WebSocket to localhost:9222, listens for Network.requestWillBeSent
+                       to detect file uploads and extract filenames from multipart/form-data
+
+    Requires Chrome/Edge launched with --remote-debugging-port=9222.
+    If CDP is unavailable, the psutil thread still runs (incognito detection works independently).
+    """
+
+    CDP_PORT      = 9222
+    POLL_INTERVAL = 5
+
+    def __init__(self, cfg: dict):
+        self._cfg              = cfg
+        self._incognito_active = False
+        self._last_titles: dict[str, str] = {}   # target_id → last seen title
+        self._psutil_thread = threading.Thread(
+            target=self._run_psutil, daemon=True, name="browser-intel-psutil"
+        )
+        self._cdp_thread = threading.Thread(
+            target=self._run_cdp, daemon=True, name="browser-intel-cdp"
+        )
+
+    def start(self):
+        self._psutil_thread.start()
+        self._cdp_thread.start()
+        _add_log(f"{G}[BROWSER INTEL]{RST} Started — incognito polling + CDP on :{self.CDP_PORT}")
+
+    # ── psutil thread ─────────────────────────────────────────────────────────
+
+    def _run_psutil(self):
+        while True:
+            time.sleep(self.POLL_INTERVAL)
+            try:
+                self._poll_incognito()
+                self._poll_webmail_titles()
+            except Exception as exc:
+                _add_log(f"{DIM}[BROWSER INTEL]{RST} psutil error: {exc}")
+
+    def _poll_incognito(self):
+        found, browser_name = False, None
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                name = (proc.info.get("name") or "").lower()
+                flag = _INCOGNITO_FLAGS.get(name)
+                if not flag:
+                    continue
+                cmdline_str = " ".join(proc.info.get("cmdline") or []).lower()
+                match = (any(f in cmdline_str for f in flag)
+                         if isinstance(flag, tuple) else flag in cmdline_str)
+                if match:
+                    found, browser_name = True, name.replace(".exe", "")
+                    break
+        except Exception:
+            pass
+
+        if found and not self._incognito_active:
+            self._incognito_active = True
+            payload = _base(self._cfg, "browser_intel")
+            payload.update({"activity_type": "incognito_detected",
+                            "browser": browser_name, "incognito": True})
+            enqueue_event(payload)
+            _stats["alerts"] += 1
+            _add_log(f"{R}[INCOGNITO]{RST} {browser_name} private/incognito mode detected")
+        elif not found:
+            self._incognito_active = False
+
+    def _poll_webmail_titles(self):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(
+                f"http://localhost:{self.CDP_PORT}/json", timeout=1
+            ) as resp:
+                targets = json.loads(resp.read().decode())
+        except Exception:
+            return
+        for target in targets:
+            if target.get("type") != "page":
+                continue
+            tid   = target.get("id", "")
+            url   = target.get("url", "")
+            title = target.get("title", "")
+            info  = _parse_webmail_title(url, title)
+            if info is None or self._last_titles.get(tid) == title:
+                continue
+            self._last_titles[tid] = title
+            payload = _base(self._cfg, "browser_intel")
+            payload.update({
+                "activity_type":    "webmail_activity",
+                "email_provider":   info["provider"],
+                "page_title":       title,
+                "email_subject":    info["email_subject"],
+                "compose_detected": info["compose_detected"],
+                "incognito":        self._incognito_active,
+            })
+            enqueue_event(payload)
+            _add_log(f"{M}[WEBMAIL]{RST} {info['provider']}: "
+                     f"{info['email_subject'][:50] or title[:40]}")
+
+    # ── CDP thread ────────────────────────────────────────────────────────────
+
+    def _run_cdp(self):
+        import asyncio
+        asyncio.run(self._cdp_loop())
+
+    async def _cdp_loop(self):
+        import asyncio
+        while True:
+            try:
+                await self._cdp_session()
+            except Exception as exc:
+                _add_log(f"{DIM}[CDP]{RST} {exc} — retry in 10 s")
+            await asyncio.sleep(10)
+
+    async def _cdp_session(self):
+        import asyncio
+        import urllib.request
+        import websockets
+
+        with urllib.request.urlopen(
+            f"http://localhost:{self.CDP_PORT}/json", timeout=2
+        ) as resp:
+            targets = json.loads(resp.read().decode())
+
+        pages = [t for t in targets
+                 if t.get("type") == "page" and "webSocketDebuggerUrl" in t]
+        if not pages:
+            await asyncio.sleep(5)
+            return
+
+        async with websockets.connect(pages[0]["webSocketDebuggerUrl"]) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Network.enable"}))
+            _add_log(f"{G}[CDP]{RST} Connected — monitoring file uploads")
+            async for raw in ws:
+                msg = json.loads(raw)
+                if msg.get("method") == "Network.requestWillBeSent":
+                    self._handle_network_request(msg.get("params", {}))
+
+    def _handle_network_request(self, params: dict):
+        req     = params.get("request", {})
+        headers = {k.lower(): v for k, v in (req.get("headers") or {}).items()}
+        if "multipart/form-data" not in headers.get("content-type", ""):
+            return
+        from urllib.parse import urlparse
+        url    = req.get("url", "")
+        domain = urlparse(url).netloc.lower().lstrip("www.")
+        fname  = _parse_upload_filename(req.get("postData", ""))
+        payload = _base(self._cfg, "browser_intel")
+        payload.update({
+            "activity_type": "file_upload",
+            "file_name":     fname,
+            "destination":   domain,
+            "url":           url,
+            "incognito":     self._incognito_active,
+        })
+        enqueue_event(payload)
+        _stats["alerts"] += 1
+        _add_log(f"{R}[UPLOAD]{RST} {fname or '(unknown)'} → {domain}"
+                 + (" [INCOGNITO]" if self._incognito_active else ""))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
