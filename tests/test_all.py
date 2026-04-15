@@ -4,7 +4,7 @@ InsightGuard — Integration Test Suite
 Tests all 6 layers + Flask API via test client.
 """
 
-import sys, os, json, tempfile
+import sys, os, json, tempfile, io, uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import importlib
@@ -962,6 +962,78 @@ def test_browser_intelligence():
     return True
 
 
+# ─── Evidence Capture ─────────────────────────────────────────────────────
+
+def test_evidence():
+    section("Evidence Capture — API (upload + retrieve)")
+    import importlib
+    import application.app as app_module
+    importlib.reload(app_module)
+    client = app_module.app.test_client()
+
+    passed = 0; total = 0
+
+    def chk(label, resp, exp_status):
+        nonlocal passed, total
+        total += 1
+        ok_flag = resp.status_code == exp_status
+        passed += ok_flag
+        print(f"  [{'PASS' if ok_flag else 'FAIL'}] {label}  → HTTP {resp.status_code}")
+        if not ok_flag:
+            print(f"         {resp.data[:150]}")
+        return resp
+
+    MINIMAL_JPEG = b'\xff\xd8\xff\xe0' + b'\x00' * 16 + b'\xff\xd9'
+    log_id = "log_ev_" + str(uuid.uuid4())[:8]
+
+    # 1. Upload JPEG → 200 + non-empty evidence_id
+    r = chk("POST /api/evidence/upload → 200 + evidence_id",
+            client.post("/api/evidence/upload", data={
+                "file":         (io.BytesIO(MINIMAL_JPEG), "test.jpg"),
+                "user_id":      "testuser",
+                "trigger_type": "severity",
+                "event_type":   "usb",
+                "log_id":       log_id,
+            }, content_type="multipart/form-data"), 200)
+    d = r.get_json() or {}
+    eid = d.get("evidence_id", "")
+    assert eid, "evidence_id must be non-empty"
+    ok(f"evidence_id = {eid[:8]}…")
+
+    # 2. Serve JPEG → 200 + image/jpeg
+    r = chk("GET /api/evidence/<id> → 200 + image/jpeg",
+            client.get(f"/api/evidence/{eid}"), 200)
+    assert "image/jpeg" in r.content_type, f"Expected image/jpeg, got {r.content_type}"
+    ok("Content-Type: image/jpeg confirmed")
+
+    # 3. By-event lookup → linked record with correct fields
+    r = chk("GET /api/evidence/by-event/<log_id> → linked record",
+            client.get(f"/api/evidence/by-event/{log_id}"), 200)
+    d = r.get_json() or {}
+    evs = d.get("evidence", [])
+    match = any(e.get("evidence_id") == eid
+                and e.get("trigger_type") == "severity"
+                and e.get("event_type") == "usb"
+                for e in evs)
+    assert match, f"Expected linked record, got {evs}"
+    ok("linked record has correct trigger_type + event_type")
+
+    # 4. Unknown ID → 404
+    chk("GET /api/evidence/<unknown-id> → 404",
+        client.get("/api/evidence/nonexistent_id_xyz"), 404)
+
+    # 5. Upload without file → 400
+    chk("POST /api/evidence/upload (no file) → 400",
+        client.post("/api/evidence/upload", data={
+            "user_id":      "testuser",
+            "trigger_type": "severity",
+            "event_type":   "usb",
+        }, content_type="multipart/form-data"), 400)
+
+    print(f"\n  {passed}/{total} passed")
+    return passed == total
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -982,6 +1054,7 @@ if __name__ == "__main__":
         "ETL Enrichment":          test_etl_enrichment(),
         "CorrelationEngine":       test_correlation_engine(),
         "Browser Intelligence":    test_browser_intelligence(),
+        "Evidence Capture":        test_evidence(),
     }
 
     section("FINAL SUMMARY")

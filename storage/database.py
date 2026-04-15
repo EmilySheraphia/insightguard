@@ -1,7 +1,7 @@
 """
 InsightGuard — Storage Layer
 ==============================
-SQLite database managing all 7 tables:
+SQLite database managing all 8 tables:
   1. users              — employees monitored by the system
   2. activity_logs      — raw/processed event records
   3. behaviour_features — extracted feature vectors
@@ -9,6 +9,7 @@ SQLite database managing all 7 tables:
   5. threat_alerts      — generated security alerts
   6. investigations     — analyst case management
   7. escalation_log     — SMTP escalation audit trail
+  8. evidence           — screenshot capture records
 """
 
 from __future__ import annotations
@@ -167,6 +168,23 @@ class DatabaseManager:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_user   ON investigations(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_status ON investigations(status)")
+
+            # Table 8: Evidence (screenshot captures)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS evidence (
+                    id           TEXT PRIMARY KEY,
+                    log_id       TEXT,
+                    user_id      TEXT,
+                    file_path    TEXT NOT NULL,
+                    trigger_type TEXT,
+                    event_type   TEXT,
+                    timestamp    TEXT,
+                    created_at   REAL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evidence_log ON evidence(log_id)"
+            )
 
     # ── User operations ──────────────────────────────────────────────────
 
@@ -405,6 +423,36 @@ class DatabaseManager:
             rows = conn.execute(
                 "SELECT * FROM escalation_log ORDER BY sent_at DESC LIMIT ?",
                 (min(limit, 200),)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Evidence operations ───────────────────────────────────────────────────
+
+    def insert_evidence(self, evidence_id: str, log_id: str, user_id: str,
+                        file_path: str, trigger_type: str, event_type: str,
+                        timestamp: str) -> None:
+        with self._lock, self._conn() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO evidence
+                    (id, log_id, user_id, file_path, trigger_type, event_type,
+                     timestamp, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (evidence_id, log_id, user_id, file_path, trigger_type,
+                  event_type, timestamp,
+                  datetime.utcnow().timestamp()))
+
+    def get_evidence_by_id(self, evidence_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM evidence WHERE id = ?", (evidence_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_evidence_by_event(self, log_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM evidence WHERE log_id = ? ORDER BY created_at DESC",
+                (log_id,)
             ).fetchall()
         return [dict(r) for r in rows]
 
