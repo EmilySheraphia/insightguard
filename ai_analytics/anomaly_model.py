@@ -42,7 +42,7 @@ _CLOUD_UPLOAD_DOMAINS = frozenset({
 
 
 class UEBAEngine:
-    """19 FeatureVector rules + 7 extra-signal rules (read from raw event dict) → 0-100 score."""
+    """19 FeatureVector rules + 10 extra-signal rules (read from raw event dict) → 0-100 score."""
 
     RULES = [
         ("off_hours_login",          12, lambda f: f.event_type_code == 0 and f.is_off_hours),
@@ -69,8 +69,9 @@ class UEBAEngine:
     EXTRA_RULES = [
         ("sensitive_file_access",  20, lambda f, e: e.get("sensitivity") in ("critical", "confidential")),
         ("usb_any",                25, lambda f, e: e.get("source") in ("usb", "endpoint_agent")),
-        ("cloud_upload",           30, lambda f, e: e.get("destination") in ("cloud","gdrive","onedrive","dropbox","s3")
-                                                    or e.get("category") == "cloud_storage"),
+        ("cloud_upload",           30, lambda f, e: (e.get("destination") in ("cloud","gdrive","onedrive","dropbox","s3")
+                                                    or e.get("category") == "cloud_storage")
+                                                    and e.get("activity_type") != "file_upload"),
         ("off_hours_boost",        15, lambda f, e: e.get("is_off_hours") in (1, True)),
         ("archive_created",        28, lambda f, e: e.get("is_archive") is True),
         ("process_abuse",          35, lambda f, e: e.get("is_process_abuse") is True),
