@@ -935,7 +935,7 @@ def evidence_serve(evidence_id):
     if not row:
         return jsonify({"error": "not found"}), 404
     fpath = Path(row["file_path"]).resolve()
-    if not str(fpath).startswith(str(EVIDENCE_DIR.resolve())):
+    if not fpath.is_relative_to(EVIDENCE_DIR.resolve()):
         return jsonify({"error": "not found"}), 404
     return send_file(str(fpath), mimetype="image/jpeg")
 
