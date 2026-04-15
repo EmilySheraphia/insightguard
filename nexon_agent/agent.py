@@ -831,7 +831,7 @@ class BrowserMonitor:
 _INCOGNITO_FLAGS = {
     "chrome.exe":  "--incognito",
     "msedge.exe":  "--inprivate",
-    "firefox.exe": ("-private", "--private-window"),
+    "firefox.exe": "--private-window",
 }
 
 _WEBMAIL_PROVIDERS = {
@@ -863,7 +863,7 @@ def _parse_webmail_title(url: str, title: str) -> dict | None:
     from urllib.parse import urlparse
     domain = urlparse(url).netloc.lower().lstrip("www.")
     for d, (provider, sep) in _WEBMAIL_PROVIDERS.items():
-        if d in domain:
+        if domain == d:
             subject = title.split(sep)[0].strip() if (title and sep in title) else ""
             return {
                 "provider":         provider,
@@ -890,6 +890,7 @@ class BrowserIntelligenceMonitor:
     def __init__(self, cfg: dict):
         self._cfg              = cfg
         self._incognito_active = False
+        self._incognito_lock = threading.Lock()
         self._last_titles: dict[str, str] = {}   # target_id → last seen title
         self._psutil_thread = threading.Thread(
             target=self._run_psutil, daemon=True, name="browser-intel-psutil"
@@ -931,16 +932,16 @@ class BrowserIntelligenceMonitor:
         except Exception:
             pass
 
-        if found and not self._incognito_active:
-            self._incognito_active = True
+        with self._incognito_lock:
+            was_active = self._incognito_active
+            self._incognito_active = found
+        if found and not was_active:
             payload = _base(self._cfg, "browser_intel")
             payload.update({"activity_type": "incognito_detected",
                             "browser": browser_name, "incognito": True})
             enqueue_event(payload)
             _stats["alerts"] += 1
             _add_log(f"{R}[INCOGNITO]{RST} {browser_name} private/incognito mode detected")
-        elif not found:
-            self._incognito_active = False
 
     def _poll_webmail_titles(self):
         import urllib.request
@@ -981,7 +982,6 @@ class BrowserIntelligenceMonitor:
         asyncio.run(self._cdp_loop())
 
     async def _cdp_loop(self):
-        import asyncio
         while True:
             try:
                 await self._cdp_session()
@@ -990,7 +990,6 @@ class BrowserIntelligenceMonitor:
             await asyncio.sleep(10)
 
     async def _cdp_session(self):
-        import asyncio
         import urllib.request
         import websockets
 
