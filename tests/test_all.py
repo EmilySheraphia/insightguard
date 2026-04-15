@@ -890,6 +890,78 @@ def test_etl_enrichment():
     return True
 
 
+# ─── Browser Intelligence ─────────────────────────────────────────────────
+
+def test_browser_intelligence():
+    section("Browser Intelligence — UEBA rules (incognito_session, file_upload_cloud, webmail_outbound)")
+    from ai_analytics.anomaly_model import UEBAEngine
+    from feature_engineering.extractor import FeatureVector
+
+    ueba = UEBAEngine()
+    base = {k: 0 for k in FeatureVector.COLUMNS}
+    fv   = FeatureVector(**base)
+
+    # incognito_session fires
+    _, triggered = ueba.score(fv, extra={"incognito": True})
+    assert "incognito_session" in triggered, f"incognito_session not triggered: {triggered}"
+    ok("incognito_session: fires when incognito=True")
+
+    # incognito_session does NOT fire when False
+    _, triggered = ueba.score(fv, extra={"incognito": False})
+    assert "incognito_session" not in triggered, "incognito_session should not fire when False"
+    ok("incognito_session: does not fire when incognito=False")
+
+    # file_upload_cloud fires for drive.google.com
+    _, triggered = ueba.score(fv, extra={"activity_type": "file_upload",
+                                          "destination": "drive.google.com"})
+    assert "file_upload_cloud" in triggered, f"file_upload_cloud not triggered: {triggered}"
+    ok("file_upload_cloud: fires for drive.google.com")
+
+    # file_upload_cloud fires for dropbox.com
+    _, triggered = ueba.score(fv, extra={"activity_type": "file_upload",
+                                          "destination": "dropbox.com"})
+    assert "file_upload_cloud" in triggered, f"file_upload_cloud not triggered: {triggered}"
+    ok("file_upload_cloud: fires for dropbox.com")
+
+    # file_upload_cloud does NOT fire for internal domain
+    _, triggered = ueba.score(fv, extra={"activity_type": "file_upload",
+                                          "destination": "internal-sharepoint.nexon.com"})
+    assert "file_upload_cloud" not in triggered, "file_upload_cloud should not fire for internal domain"
+    ok("file_upload_cloud: does not fire for internal domain")
+
+    # webmail_outbound fires when compose_detected=True
+    _, triggered = ueba.score(fv, extra={"activity_type": "webmail_activity",
+                                          "compose_detected": True})
+    assert "webmail_outbound" in triggered, f"webmail_outbound not triggered: {triggered}"
+    ok("webmail_outbound: fires when compose_detected=True")
+
+    # webmail_outbound does NOT fire when compose_detected=False
+    _, triggered = ueba.score(fv, extra={"activity_type": "webmail_activity",
+                                          "compose_detected": False})
+    assert "webmail_outbound" not in triggered, "webmail_outbound should not fire when False"
+    ok("webmail_outbound: does not fire when compose_detected=False")
+
+    # webmail_outbound does NOT fire for wrong activity_type
+    _, triggered = ueba.score(fv, extra={"activity_type": "web", "compose_detected": True})
+    assert "webmail_outbound" not in triggered, "webmail_outbound should not fire for activity_type=web"
+    ok("webmail_outbound: does not fire when activity_type != webmail_activity")
+
+    # Combined: incognito + file_upload_cloud + off_hours_boost all trigger
+    _, triggered = ueba.score(fv, extra={
+        "incognito":     True,
+        "activity_type": "file_upload",
+        "destination":   "drive.google.com",
+        "is_off_hours":  1,
+    })
+    assert "incognito_session" in triggered, "incognito_session missing from combined"
+    assert "file_upload_cloud" in triggered, "file_upload_cloud missing from combined"
+    assert "off_hours_boost"   in triggered, "off_hours_boost missing from combined"
+    ok("combined: incognito_session + file_upload_cloud + off_hours_boost all trigger")
+
+    print(f"\n  9/9 passed")
+    return True
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -909,6 +981,7 @@ if __name__ == "__main__":
         "UEBA New Rules":          test_ueba_new_rules(),
         "ETL Enrichment":          test_etl_enrichment(),
         "CorrelationEngine":       test_correlation_engine(),
+        "Browser Intelligence":    test_browser_intelligence(),
     }
 
     section("FINAL SUMMARY")

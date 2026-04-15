@@ -35,6 +35,12 @@ from data_processing.etl_pipeline import ProcessedLog
 # UEBA Rule Engine (supports the ML scoring layer)
 # ---------------------------------------------------------------------------
 
+_CLOUD_UPLOAD_DOMAINS = frozenset({
+    "drive.google.com", "onedrive.live.com", "onedrive.com",
+    "dropbox.com", "wetransfer.com", "mega.nz", "s3.amazonaws.com",
+})
+
+
 class UEBAEngine:
     """19 FeatureVector rules + 7 extra-signal rules (read from raw event dict) → 0-100 score."""
 
@@ -71,6 +77,11 @@ class UEBAEngine:
         ("large_attachment_exfil", 22, lambda f, e: e.get("source") in ("email", "mail_gateway")
                                                     and e.get("direction") in ("outbound", "sent")
                                                     and float(e.get("attachment_mb", 0)) >= 10),
+        ("incognito_session",      20, lambda f, e: e.get("incognito") is True),
+        ("file_upload_cloud",      25, lambda f, e: e.get("activity_type") == "file_upload"
+                                                    and e.get("destination") in _CLOUD_UPLOAD_DOMAINS),
+        ("webmail_outbound",       15, lambda f, e: e.get("activity_type") == "webmail_activity"
+                                                    and e.get("compose_detected") is True),
     ]
 
     def score(self, fv: FeatureVector, extra: dict = None) -> tuple[int, list[str]]:
