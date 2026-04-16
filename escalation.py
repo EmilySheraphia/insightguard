@@ -194,6 +194,12 @@ class EscalationEngine:
             print(f"[Escalation] Email failed: {e}")
             return {"status": "failed", "error": str(e)}
 
+    def send_immediate(self, payload: dict) -> dict:
+        """Send an email immediately, bypassing the queue. Logs the result."""
+        result = self._send_email(payload)
+        self._log_escalation(payload, result["status"], result.get("error", ""))
+        return result
+
     def _log_escalation(self, payload: dict, status: str, error: str = "") -> None:
         if self._db is None:
             return

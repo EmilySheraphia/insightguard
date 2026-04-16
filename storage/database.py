@@ -453,6 +453,39 @@ class DatabaseManager:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_event_by_log_id(self, log_id: str) -> dict | None:
+        """Fetch a single event (activity + anomaly result) by log_id, for alert resend."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT al.log_id, al.user_id, al.timestamp, al.activity_type, al.source,
+                          u.department,
+                          ar.risk_score, ar.severity, ar.triggered_rules
+                   FROM activity_logs al
+                   LEFT JOIN users u  ON u.user_id = al.user_id
+                   LEFT JOIN anomaly_results ar ON ar.log_id = al.log_id
+                   WHERE al.log_id = ?""",
+                (log_id,)
+            ).fetchone()
+        if not row:
+            return None
+        rules = []
+        if row["triggered_rules"]:
+            try:
+                rules = json.loads(row["triggered_rules"])
+            except Exception:
+                pass
+        return {
+            "log_id":        row["log_id"],
+            "user_id":       row["user_id"],
+            "timestamp":     row["timestamp"],
+            "activity_type": row["activity_type"],
+            "source":        row["source"],
+            "department":    row["department"] or "",
+            "risk_score":    row["risk_score"] or 0,
+            "severity":      row["severity"] or "normal",
+            "triggered_rules": rules,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Quick self-test

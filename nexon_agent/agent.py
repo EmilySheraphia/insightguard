@@ -33,6 +33,7 @@ import psutil
 import config_sync
 from process_monitor import ProcessMonitor
 from clipboard_monitor import ClipboardMonitor
+from screenshot_capture import ScreenshotCapture
 
 # ── watchdog import (file system monitoring) ─────────────────────────────────
 try:
@@ -103,6 +104,7 @@ _event_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
 _log_lock = threading.Lock()
 _stats = {"sent": 0, "errors": 0, "alerts": 0}
+_screenshot: ScreenshotCapture | None = None
 
 # ── Threat behaviour engine ───────────────────────────────────────────────────
 # Tracks recent events in a rolling window to detect multi-step threat patterns.
@@ -205,6 +207,12 @@ def _check_threat_patterns(cfg: dict):
             "severity_override": threat["severity_hint"],
         })
         enqueue_event(payload)
+        if _screenshot:
+            _screenshot.capture(
+                trigger_type="pattern",
+                event_type=threat["threat_type"],
+                log_id="",
+            )
         _stats["alerts"] += 1
         _add_log(f"{R}[THREAT]{RST} {threat['threat_type']}: {threat['description']}")
 
@@ -238,8 +246,15 @@ def _sender_thread(cfg: dict):
             resp = session.post(url, json=payload, timeout=5)
             if resp.status_code == 200:
                 _stats["sent"] += 1
-                score = resp.json().get("risk_score", "?")
+                resp_data = resp.json()
+                score = resp_data.get("risk_score", "?")
                 _add_log(f"{G}[SENT]{RST} {payload.get('source','?')} → score {score}")
+                if isinstance(score, (int, float)) and score >= 60 and _screenshot:
+                    _screenshot.capture(
+                        trigger_type="severity",
+                        event_type=payload.get("activity_type", payload.get("source", "unknown")),
+                        log_id=resp_data.get("log_id", ""),
+                    )
             else:
                 _stats["errors"] += 1
                 _add_log(f"{Y}[WARN]{RST} Server returned {resp.status_code}")
@@ -1073,6 +1088,8 @@ def main():
     print(f"{BOLD}{C}{'═'*60}{RST}\n")
 
     cfg = load_config()
+    global _screenshot
+    _screenshot = ScreenshotCapture(cfg, cfg["server_url"])
 
     print(f"  {G}User ID:{RST}    {cfg['user_id']}")
     print(f"  {G}Name:{RST}       {cfg['name']}")

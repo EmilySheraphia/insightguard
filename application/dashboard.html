@@ -542,7 +542,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
             <table class="log-table">
               <thead><tr>
                 <th>Time</th><th>User</th><th>Dept</th><th>Event</th><th>File</th>
-                <th>ML</th><th>PUB</th><th>PERS</th><th>Severity</th><th>Rules</th>
+                <th>ML</th><th>PUB</th><th>PERS</th><th>Severity</th><th>Rules</th><th></th>
               </tr></thead>
               <tbody id="logBody"></tbody>
             </table>
@@ -1047,6 +1047,10 @@ function addLogRow(d){
   const tr=document.createElement('tr');
   const fname = d.file_name||(d.files&&d.files.length?d.files[0]:'')||d.site_name||'';
   const fnameDisplay = fname ? `<span style="font-size:10px;font-family:var(--mono);color:var(--text-secondary)" title="${esc(d.page_title||fname)}">${esc(fname.length>22?fname.slice(0,20)+'…':fname)}</span>` : '<span style="color:var(--text-muted)">—</span>';
+  const camCell = (sev==='critical'||sev==='high_risk')&&d.log_id
+    ? `<button onclick="fetchEvidence('${esc(d.log_id)}',event)" title="View screenshot"
+         style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:12px;color:var(--text-secondary)">📷</button>`
+    : '';
   tr.innerHTML=`
     <td class="mono" style="color:var(--text-muted)">${time}</td>
     <td class="mono">${d.user_id||'—'}</td>
@@ -1058,6 +1062,7 @@ function addLogRow(d){
     <td style="font-family:var(--mono)" data-conf-user="${d.user_id||''}" data-conf-score="${Math.round(d.risk_score||0)}">${Math.round(d.risk_score||0)}</td>
     <td><span class="badge badge-${sev}">${sev.replace('_',' ')}</span></td>
     <td style="font-size:10px;color:var(--text-muted);font-family:var(--mono)">${(d.triggered_rules||[]).slice(0,2).join(', ')||'—'}</td>
+    <td>${camCell}</td>
   `;
   tr.style.cursor='pointer';
   tr.onclick=()=>openModal(d);
@@ -1187,8 +1192,34 @@ function openModal(d){
     ${d.files&&d.files.length?`<div style="margin-top:10px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em">Files Transferred</div><div style="display:flex;flex-wrap:wrap;gap:4px">${d.files.slice(0,10).map(f=>`<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-family:var(--mono);font-size:11px">${f}</span>`).join('')}</div></div>`:''}
     ${d.threat_type?`<div class="pipe-row" style="margin-top:8px;background:var(--red-d)"><span class="pipe-label" style="color:var(--red)">⚠ Threat Pattern</span><span class="pipe-val mono" style="color:var(--red)">${d.threat_type.replace(/_/g,' ')}</span></div>`:''}
     ${d.description?`<div class="pipe-row"><span class="pipe-label">Details</span><span class="pipe-val" style="font-size:11px">${d.description}</span></div>`:''}
+    ${d.log_id?`<button onclick="resendAlert('${esc(d.log_id)}',this)"
+      style="margin-top:12px;background:var(--orange);border:none;border-radius:var(--r);padding:8px 16px;color:#fff;font-size:12px;font-family:var(--mono);cursor:pointer;width:100%">
+      Resend Alert Email
+    </button>`:''}
+    <div id="evidenceSection" style="margin-top:12px;display:none">
+      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em">Screenshots</div>
+      <div id="evidenceThumbs"></div>
+    </div>
   `;
   document.getElementById('riskModal').classList.add('open');
+  // Lazy fetch: evidence thumbnails
+  if(d.log_id){
+    fetch(base+'/api/evidence/by-event/'+encodeURIComponent(d.log_id))
+      .then(r=>r.json()).then(data=>{
+        if(!data.evidence||!data.evidence.length)return;
+        const section=document.getElementById('evidenceSection');
+        const thumbs=document.getElementById('evidenceThumbs');
+        if(!section||!thumbs)return;
+        section.style.display='block';
+        thumbs.innerHTML=data.evidence.map(ev=>
+          `<a href="${base}/api/evidence/${ev.evidence_id}" target="_blank" onclick="event.stopPropagation()">
+            <img src="${base}/api/evidence/${ev.evidence_id}"
+                 style="max-width:100%;border-radius:6px;border:1px solid var(--border);cursor:pointer"
+                 title="${ev.trigger_type} — ${ev.event_type}">
+          </a>`
+        ).join('');
+      }).catch(()=>{});
+  }
   // Lazy fetch: confidence score
   const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
   const score=Math.round(d.risk_score||0);
@@ -1623,6 +1654,57 @@ function loadEscalationLog(){
         <td style="padding:4px 6px;color:${e.status==='sent'?'var(--green)':'var(--red)'}">${e.status||'—'}</td>
       </tr>`).join('')+'</table>';
   }).catch(()=>{});
+}
+
+// ══════════════════════════════════════════════════════
+//  EVIDENCE + RESEND
+// ══════════════════════════════════════════════════════
+function fetchEvidence(logId, event){
+  event.stopPropagation();
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  fetch(base+'/api/evidence/by-event/'+encodeURIComponent(logId))
+    .then(r=>r.json())
+    .then(data=>{
+      if(!data.evidence||!data.evidence.length){
+        toast('No screenshot','No screenshot captured for this event','warning');
+        return;
+      }
+      openEvidenceLightbox(data.evidence[0],base);
+    }).catch(()=>toast('No screenshot','Could not load evidence','warning'));
+}
+function openEvidenceLightbox(ev,base){
+  const bg=document.createElement('div');
+  bg.style='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  bg.onclick=()=>document.body.removeChild(bg);
+  const wrap=document.createElement('div');
+  wrap.style='position:relative;display:flex;flex-direction:column;align-items:center;gap:10px';
+  const img=document.createElement('img');
+  img.src=base+'/api/evidence/'+ev.evidence_id;
+  img.style='max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 0 40px rgba(0,0,0,.8)';
+  const label=document.createElement('div');
+  label.textContent=(ev.trigger_type||'')+(ev.event_type?' — '+ev.event_type:'')+' · '+(ev.timestamp||'').slice(0,19).replace('T',' ');
+  label.style='color:#fff;font-family:var(--mono);font-size:11px;background:rgba(0,0,0,.6);padding:5px 12px;border-radius:4px';
+  const hint=document.createElement('div');
+  hint.textContent='Click anywhere to close';
+  hint.style='color:rgba(255,255,255,.4);font-size:10px;font-family:var(--mono)';
+  wrap.appendChild(img);wrap.appendChild(label);wrap.appendChild(hint);
+  bg.appendChild(wrap);document.body.appendChild(bg);
+}
+function resendAlert(logId,btn){
+  const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  btn.disabled=true;btn.textContent='Sending…';
+  fetch(base+'/api/escalation/resend',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({log_id:logId})
+  }).then(r=>r.json()).then(data=>{
+    if(data.status==='sent'){
+      btn.textContent='Email Sent ✓';btn.style.background='var(--green)';
+    } else if(data.status==='skipped'){
+      btn.textContent='Skipped (escalation disabled)';btn.style.background='var(--card)';btn.style.color='var(--text-muted)';
+    } else {
+      btn.textContent=data.error||'Send Failed';btn.style.background='var(--red)';
+    }
+  }).catch(()=>{btn.textContent='Failed';btn.style.background='var(--red)';});
 }
 
 // ══════════════════════════════════════════════════════

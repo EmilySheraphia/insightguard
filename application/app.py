@@ -280,9 +280,10 @@ def _sim(level):
         "ueba_score":result["ueba_score"],"if_score":result["if_score"],"lof_score":result["lof_score"],
         "triggered_rules":result["triggered_rules"],"timestamp":_now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data_mb":fv_dict["data_mb"],"file_count":fv_dict["file_count"],"tor":bool(fv_dict["tor"]),
+        "log_id":lid,
     }
     _broadcast_sse(pay)
-    return {**pay,"is_anomaly":result["is_anomaly"],"log_id":lid}
+    return {**pay,"is_anomaly":result["is_anomaly"]}
 
 
 def _process_event(raw):
@@ -348,11 +349,12 @@ def _process_event(raw):
         "files":raw.get("files",[]),
         "threat_type":raw.get("threat_type",""),
         "description":raw.get("description",""),
+        "log_id":log.log_id,
     }
     _broadcast_sse(pay)
     # Escalation
     _escalation.enqueue({**pay, "triggered_rules": result["triggered_rules"]})
-    return {**pay,"is_anomaly":result["is_anomaly"],"log_id":log.log_id,"timestamp":log.timestamp.isoformat()}
+    return {**pay,"is_anomaly":result["is_anomaly"],"timestamp":log.timestamp.isoformat()}
 
 
 def _upd(uid, result, raw):
@@ -1044,6 +1046,19 @@ def update_escalation_config():
 @app.post("/api/escalation/test")
 def test_escalation():
     result = _escalation.send_test_email()
+    code = 200 if result["status"] in ("sent", "skipped") else 500
+    return jsonify(result), code
+
+@app.post("/api/escalation/resend")
+def resend_escalation():
+    body = request.get_json(silent=True) or {}
+    log_id = body.get("log_id", "")
+    if not log_id:
+        return jsonify({"error": "log_id required"}), 400
+    event = db.get_event_by_log_id(log_id)
+    if not event:
+        return jsonify({"error": "Event not found"}), 404
+    result = _escalation.send_immediate(event)
     code = 200 if result["status"] in ("sent", "skipped") else 500
     return jsonify(result), code
 

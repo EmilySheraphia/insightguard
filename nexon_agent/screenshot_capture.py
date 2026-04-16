@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ScreenshotCapture:
     """Capture the full screen and POST the JPEG to /api/evidence/upload."""
 
-    EVIDENCE_DIR = Path("evidence")   # relative to agent working directory
+    EVIDENCE_DIR = Path(__file__).parent / "evidence"
 
     def __init__(self, cfg: dict, server_url: str) -> None:
         """Create local evidence directory if missing."""
