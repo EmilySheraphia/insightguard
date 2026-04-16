@@ -321,6 +321,17 @@ def _process_event(raw):
         result["is_anomaly"] = True
         final_sev = result["severity"]
 
+    # Archive floor — zipping files is always at least high_risk (score floor 65)
+    if raw.get("is_archive"):
+        floor = 85 if raw.get("sensitive") else 65
+        if result["risk_score"] < floor:
+            result["risk_score"] = floor
+            result["severity"] = "critical" if floor >= 80 else "high_risk"
+            result["is_anomaly"] = True
+            final_sev = result["severity"]
+            if "archive_created" not in result.get("triggered_rules", []):
+                result["triggered_rules"] = list(result.get("triggered_rules", [])) + ["archive_created"]
+
     # Store final scores (post-boost) to DB
     db.insert_anomaly_result(did, uid, log.log_id, result)
     _upd(uid, result, raw)

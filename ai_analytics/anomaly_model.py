@@ -73,7 +73,7 @@ class UEBAEngine:
                                                     or e.get("category") == "cloud_storage")
                                                     and e.get("activity_type") != "file_upload"),
         ("off_hours_boost",        15, lambda f, e: e.get("is_off_hours") in (1, True)),
-        ("archive_created",        28, lambda f, e: e.get("is_archive") is True),
+        ("archive_created",        65, lambda f, e: e.get("is_archive") is True),
         ("process_abuse",          35, lambda f, e: e.get("is_process_abuse") is True),
         ("large_attachment_exfil", 22, lambda f, e: e.get("source") in ("email", "mail_gateway")
                                                     and e.get("direction") in ("outbound", "sent")
