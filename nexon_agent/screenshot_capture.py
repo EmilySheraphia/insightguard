@@ -50,7 +50,11 @@ class ScreenshotCapture:
 
             with mss_module.mss() as sct:
                 shot = sct.grab(sct.monitors[0])   # monitors[0] = all monitors combined
-                img  = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+                # Explicit BGRA → RGB conversion (avoids "BGRX" raw decoder
+                # compatibility issues across Pillow versions)
+                img = Image.frombytes("RGBA", (shot.width, shot.height), bytes(shot.bgra))
+                r, g, b, a = img.split()
+                img = Image.merge("RGB", (b, g, r))   # BGRA → RGB channel reorder
                 img.save(str(fpath), format="JPEG", quality=75)
 
             logger.info("[ScreenshotCapture] Saved %s", fname)

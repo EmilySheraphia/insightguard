@@ -295,7 +295,7 @@ def _process_event(raw):
     fv      = fe_eng.extractFeatures(log)
     uid     = log.user_id
     result  = _full_score(fv.to_dict(), uid, fv.to_array(), role=raw.get("role",""), raw_event=raw)
-    db.upsert_user(uid, raw.get("department",""), raw.get("role",""))
+    db.upsert_user(uid, raw.get("department",""), raw.get("role",""), raw.get("name",""))
     db.insert_activity_log(log.log_id, uid, log.timestamp.isoformat(),
                            log.activity_type, log.source, details=fv.to_dict())
     db.insert_features("ft_"+log.log_id, uid, log.log_id, fv.to_dict())
@@ -361,6 +361,7 @@ def _process_event(raw):
         "threat_type":raw.get("threat_type",""),
         "description":raw.get("description",""),
         "log_id":log.log_id,
+        "name":raw.get("name",""),
     }
     _broadcast_sse(pay)
     # Escalation
@@ -989,13 +990,14 @@ def recent_events():
         rows = con.execute("""
             SELECT
                 al.log_id, al.user_id, al.timestamp, al.activity_type, al.source,
-                u.department, u.role,
+                u.department, u.role, u.name,
                 ar.risk_score, ar.severity, ar.is_anomaly,
                 ar.if_score, ar.lof_score, ar.ueba_score, ar.triggered_rules
             FROM activity_logs al
             LEFT JOIN users u            ON al.user_id = u.user_id
             LEFT JOIN anomaly_results ar ON ar.log_id  = al.log_id
             WHERE al.timestamp >= ?
+              AND al.user_id NOT LIKE '%.%'
             ORDER BY al.timestamp DESC
             LIMIT ?
         """, (since, limit)).fetchall()
@@ -1018,6 +1020,7 @@ def recent_events():
             pass
         events.append({
             "user_id":       r["user_id"],
+            "name":          r["name"] or "",
             "department":    r["department"] or "",
             "activity_type": r["activity_type"] or "",
             "timestamp":     r["timestamp"] or "",

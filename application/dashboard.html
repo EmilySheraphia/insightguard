@@ -745,12 +745,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh
                 <div><label class="fl">SMTP User (Gmail)</label><input class="fi" id="escSmtpUser" type="email" placeholder="you@gmail.com"></div>
                 <div><label class="fl">App Password</label><input class="fi" id="escSmtpPass" type="password" placeholder="Gmail app password"></div>
                 <div><label class="fl">Recipient Email</label><input class="fi" id="escRecipient" type="email" placeholder="analyst@company.com"></div>
-                <div><label class="fl">Min Severity</label>
-                  <select class="fi" id="escMinSev" style="cursor:pointer">
-                    <option value="suspicious">Suspicious</option>
-                    <option value="high_risk">High Risk</option>
-                    <option value="critical" selected>Critical</option>
-                  </select>
+                <div>
+                  <label class="fl">Alert on Severities</label>
+                  <div style="display:flex;gap:14px;flex-wrap:wrap;padding:6px 0">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-family:var(--mono)"><input type="checkbox" id="escSevSuspicious" value="suspicious"> Suspicious</label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-family:var(--mono)"><input type="checkbox" id="escSevHighRisk" value="high_risk"> High Risk</label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-family:var(--mono)"><input type="checkbox" id="escSevCritical" value="critical" checked> Critical</label>
+                  </div>
                 </div>
               </div>
               <div style="display:flex;align-items:center;gap:10px">
@@ -996,6 +997,7 @@ function handleEvent(d){
 //  ALERT FEED
 // ══════════════════════════════════════════════════════
 function addAlertRow(d){
+  if(d.user_id&&d.user_id.includes('.'))return;  // hide CERT dataset users
   const feed=document.getElementById('alertFeed');
   const empty=feed.querySelector('div[style*="padding:40px"]');
   if(empty)empty.remove();
@@ -1039,6 +1041,7 @@ function setFilter(f,btn){
 //  LOG TABLE
 // ══════════════════════════════════════════════════════
 function addLogRow(d){
+  if(d.user_id&&d.user_id.includes('.'))return;  // hide CERT dataset users
   logRows.unshift(d);
   if(logRows.length>500)logRows.pop();
   const tbody=document.getElementById('logBody');
@@ -1053,7 +1056,7 @@ function addLogRow(d){
     : '';
   tr.innerHTML=`
     <td class="mono" style="color:var(--text-muted)">${time}</td>
-    <td class="mono">${d.user_id||'—'}</td>
+    <td class="mono">${d.user_id||'—'}${d.name?`<br><span style="font-size:10px;color:var(--text-secondary);font-family:var(--font);font-weight:400">${esc(d.name)}</span>`:''}</td>
     <td style="color:var(--text-secondary)">${d.department||'—'}</td>
     <td>${d.activity_type||'—'}</td>
     <td>${fnameDisplay}</td>
@@ -1164,7 +1167,7 @@ function openModal(d){
   const sev=d.severity||'normal';
   document.getElementById('modalBody').innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <div class="pipe-row"><span class="pipe-label">User</span><span class="pipe-val mono">${d.user_id||'—'}</span></div>
+      <div class="pipe-row"><span class="pipe-label">User</span><span class="pipe-val mono">${d.user_id||'—'}${d.name?` <span style="font-size:11px;color:var(--text-secondary);font-family:var(--font)">${esc(d.name)}</span>`:''}</span></div>
       <div class="pipe-row"><span class="pipe-label">Department</span><span class="pipe-val">${d.department||'—'}</span></div>
       <div class="pipe-row"><span class="pipe-label">Activity</span><span class="pipe-val">${d.activity_type||'—'}</span></div>
       <div class="pipe-row"><span class="pipe-label">Severity</span><span class="badge badge-${sev}">${sev.replace('_',' ')}</span></div>
@@ -1595,19 +1598,26 @@ function loadEscalationConfig(){
     document.getElementById('escSmtpUser').value=cfg.smtp_user||'';
     document.getElementById('escRecipient').value=cfg.recipient_email||'';
     document.getElementById('escEnabled').checked=!!cfg.enabled;
-    document.getElementById('escMinSev').value=cfg.min_severity||'critical';
+    const sevs=cfg.severities&&cfg.severities.length?cfg.severities:[cfg.min_severity||'critical'];
+    document.getElementById('escSevSuspicious').checked=sevs.includes('suspicious');
+    document.getElementById('escSevHighRisk').checked=sevs.includes('high_risk');
+    document.getElementById('escSevCritical').checked=sevs.includes('critical');
     loadEscalationLog();
   }).catch(()=>{});
 }
 
 function saveEscalationConfig(){
   const base=document.getElementById('apiUrl').value.trim()||window.location.origin;
+  const sevs=[];
+  if(document.getElementById('escSevSuspicious').checked)sevs.push('suspicious');
+  if(document.getElementById('escSevHighRisk').checked)sevs.push('high_risk');
+  if(document.getElementById('escSevCritical').checked)sevs.push('critical');
   const body={
     enabled: document.getElementById('escEnabled').checked,
     smtp_user: document.getElementById('escSmtpUser').value.trim(),
     smtp_password: document.getElementById('escSmtpPass').value,
     recipient_email: document.getElementById('escRecipient').value.trim(),
-    min_severity: document.getElementById('escMinSev').value,
+    severities: sevs,
     smtp_host:'smtp.gmail.com', smtp_port:465
   };
   fetch(base+'/api/escalation/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})

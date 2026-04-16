@@ -27,6 +27,7 @@ _DEFAULT_CONFIG = {
     "smtp_password": "",
     "recipient_email": "",
     "min_severity": "critical",
+    "severities": [],        # if non-empty, overrides min_severity
     "dashboard_url": "http://localhost:5000",
 }
 
@@ -90,13 +91,20 @@ class EscalationEngine:
         Drops silently if queue is full or escalation is disabled.
         """
         with self._config_lock:
-            enabled = self.config.get("enabled")
-            min_sev = self.config.get("min_severity", "critical")
+            enabled    = self.config.get("enabled")
+            min_sev    = self.config.get("min_severity", "critical")
+            severities = self.config.get("severities", [])
         if not enabled:
             return
         sev = event_payload.get("severity", "normal")
-        if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(min_sev, 3):
-            return
+        if severities:
+            # Explicit list mode: email only for the selected severities
+            if sev not in severities:
+                return
+        else:
+            # Legacy min_severity mode
+            if _SEV_ORDER.get(sev, 0) < _SEV_ORDER.get(min_sev, 3):
+                return
         try:
             self._queue.put_nowait(event_payload)
         except queue.Full:

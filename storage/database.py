@@ -61,9 +61,15 @@ class DatabaseManager:
                     user_id     TEXT PRIMARY KEY,
                     department  TEXT,
                     role        TEXT,
+                    name        TEXT DEFAULT '',
                     created_at  TEXT DEFAULT (datetime('now'))
                 )
             """)
+            # Migration: add name column to existing databases
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN name TEXT DEFAULT ''")
+            except Exception:
+                pass  # column already exists
 
             # Table 2: Activity Logs
             conn.execute("""
@@ -187,15 +193,16 @@ class DatabaseManager:
 
     # ── User operations ──────────────────────────────────────────────────
 
-    def upsert_user(self, user_id: str, department: str = "", role: str = "") -> None:
+    def upsert_user(self, user_id: str, department: str = "", role: str = "", name: str = "") -> None:
         with self._lock, self._conn() as conn:
             conn.execute("""
-                INSERT INTO users (user_id, department, role)
-                VALUES (?, ?, ?)
+                INSERT INTO users (user_id, department, role, name)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     department = excluded.department,
-                    role       = excluded.role
-            """, (user_id, department, role))
+                    role       = excluded.role,
+                    name       = CASE WHEN excluded.name != '' THEN excluded.name ELSE users.name END
+            """, (user_id, department, role, name))
 
     def get_user(self, user_id: str) -> dict | None:
         with self._conn() as conn:

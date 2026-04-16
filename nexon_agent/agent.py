@@ -276,6 +276,7 @@ def _sender_thread(cfg: dict):
 def _base(cfg: dict, source: str) -> dict:
     return {
         "user_id":    cfg["user_id"],
+        "name":       cfg.get("name", ""),
         "timestamp":  datetime.datetime.utcnow().isoformat() + "Z",
         "source":     source,
         "department": cfg["department"],
