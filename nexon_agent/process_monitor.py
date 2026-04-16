@@ -140,6 +140,10 @@ class ProcessMonitor:
         payload["pid"]          = pid
         payload["off_hours"]    = config_sync.is_off_hours()
 
+        # Skip normal process launches — only report dangerous events
+        if event_type == "process_launch":
+            return
+
         if event_type == "file":
             op    = next((o for o, p in _FILE_OPS.items() if p.search(cmdline_str)), "command_file")
             fpath = _extract_file_path(cmdline_str)

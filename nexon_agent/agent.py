@@ -999,12 +999,16 @@ class BrowserIntelligenceMonitor:
 
     async def _cdp_loop(self):
         import asyncio
+        _logged_unavailable = False
         while True:
             try:
+                _logged_unavailable = False   # reset on successful connect
                 await self._cdp_session()
             except Exception as exc:
-                _add_log(f"{DIM}[CDP]{RST} {exc} — retry in 10 s")
-            await asyncio.sleep(10)
+                if not _logged_unavailable:
+                    _add_log(f"{DIM}[CDP]{RST} Chrome debug port unavailable — upload detection disabled")
+                    _logged_unavailable = True
+            await asyncio.sleep(60)   # retry every 60 s, not 10 s
 
     async def _cdp_session(self):
         import urllib.request
