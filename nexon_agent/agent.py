@@ -997,6 +997,7 @@ class BrowserIntelligenceMonitor:
         asyncio.run(self._cdp_loop())
 
     async def _cdp_loop(self):
+        import asyncio
         while True:
             try:
                 await self._cdp_session()

@@ -108,7 +108,10 @@ class ETLPipeline:
         if not raw.user_id or not raw.timestamp:
             return False
         if raw.activity_type not in {
-            "login", "logoff", "file_access", "email", "usb", "web"
+            "login", "logoff", "file_access", "email", "usb", "web",
+            "process_launch", "process_kill", "log_clear",
+            "incognito_detected", "webmail_activity", "file_upload",
+            "correlation_alert",
         }:
             return False
         return True
