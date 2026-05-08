@@ -111,13 +111,46 @@ class PsychometricStore:
                     continue
         return count
 
+    def add_profile(self, user_id: str, name: str,
+                    O: int, C: int, E: int, A: int, N: int) -> None:
+        """Add or overwrite a single profile programmatically."""
+        self._profiles[user_id] = OCEANProfile(
+            user_id=user_id, name=name,
+            openness=O, conscientiousness=C,
+            extraversion=E, agreeableness=A, neuroticism=N,
+        )
+
+    def load_from_list(self, profiles: list[dict]) -> int:
+        """Load profiles from a list of dicts with keys:
+           user_id, name, O, C, E, A, N
+        Returns number loaded."""
+        count = 0
+        for p in profiles:
+            uid = p.get("user_id", "").strip()
+            if not uid:
+                continue
+            try:
+                self.add_profile(
+                    user_id=uid,
+                    name=p.get("name", ""),
+                    O=int(p.get("O", 50)),
+                    C=int(p.get("C", 50)),
+                    E=int(p.get("E", 50)),
+                    A=int(p.get("A", 50)),
+                    N=int(p.get("N", 50)),
+                )
+                count += 1
+            except (ValueError, KeyError):
+                continue
+        return count
+
     def get(self, user_id: str) -> OCEANProfile | None:
         return self._profiles.get(user_id)
 
     def get_risk(self, user_id: str) -> float:
         """Return psychometric risk score for user, or 50.0 (neutral) if unknown."""
         profile = self._profiles.get(user_id)
-        return profile.psychometric_risk if profile else 50.0
+        return profile.psychometric_risk if profile else 30.0
 
     def all_profiles(self) -> list[dict]:
         return [p.to_dict() for p in
@@ -171,7 +204,7 @@ class PERSScorer:
 
         if pers_score >= 80:   severity = "critical"
         elif pers_score >= 60: severity = "high_risk"
-        elif pers_score >= 35: severity = "suspicious"
+        elif pers_score >= 45: severity = "suspicious"
         else:                  severity = "normal"
 
         return {
@@ -180,7 +213,7 @@ class PERSScorer:
             "pers_score":        pers_score,
             "enhancement":       enhancement,
             "severity":          severity,
-            "is_anomaly":        pers_score >= 35,
+            "is_anomaly":        pers_score >= 45,
             "ocean_profile":     profile.to_dict() if profile else None,
         }
 
@@ -220,7 +253,7 @@ def get_pers_score(user_id: str, ml_score: int) -> dict:
             "pers_score":        ml_score,
             "enhancement":       0,
             "severity":          _ml_severity(ml_score),
-            "is_anomaly":        ml_score >= 35,
+            "is_anomaly":        ml_score >= 45,
             "ocean_profile":     None,
         }
     return _scorer.enhance(user_id, ml_score)
@@ -233,7 +266,7 @@ def get_store() -> PsychometricStore:
 def _ml_severity(score: int) -> str:
     if score >= 80:   return "critical"
     if score >= 60:   return "high_risk"
-    if score >= 35:   return "suspicious"
+    if score >= 45:   return "suspicious"
     return "normal"
 
 

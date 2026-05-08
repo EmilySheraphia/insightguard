@@ -120,9 +120,57 @@ Dept filesystem roots are `/home/` (not `/company/`).
 - Single Flask app serves both UIs from the same origin
 - SQLite for storage — consider PostgreSQL for production scale
 
+## Nexon Endpoint Agent (Real Windows Monitoring)
+Located in `nexon_agent/` — a real Python agent that runs on an actual Windows laptop and
+sends live telemetry to InsightGuard via `POST /api/events`.
+
+```
+nexon_agent/
+  agent.py          Main monitoring agent (all threads)
+  config.json       Per-deployment config (server URL, employee identity, blocked sites)
+  requirements.txt  requests, watchdog, psutil, pywin32
+  setup.bat         One-click setup on Windows (creates venv, installs deps)
+  start_agent.bat   Launch script
+  README_SETUP.md   Step-by-step deployment guide for the Windows laptop
+```
+
+### What the agent monitors
+| Monitor | Detail |
+|---------|--------|
+| Login | Fires `auth_system` event on agent start |
+| File system | `watchdog` watches Documents/Desktop/Downloads — create/modify/move/delete with filename + MB |
+| USB devices | `psutil` polls every 5s — detects insert/remove, tracks files copied to USB |
+| Browser history | Polls Chrome/Edge/Firefox SQLite DBs every 10s — all URLs + blocked site flagging |
+
+### Config fields (config.json)
+- `server_url` — InsightGuard IP, e.g. `"http://192.168.1.42:5000"` (Flask binds 0.0.0.0 so LAN works)
+- `user_id` — must match an employee ID known to InsightGuard
+- `department`, `role` — passed with every event for correct UEBA scoring
+- `blocked_sites` — domains that trigger `blocked: true` web event → immediate UEBA spike
+- `monitor_paths` — defaults to `%USERPROFILE%\Documents/Desktop/Downloads`
+
+### Setup on employee Windows laptop
+1. Copy `nexon_agent/` to laptop (e.g. `C:\NexonAgent\`)
+2. Install Python 3.10+ (tick "Add to PATH")
+3. Run `setup.bat` (installs venv + deps)
+4. Edit `config.json` — set `server_url` to InsightGuard machine's LAN IP
+5. Run `start_agent.bat`
+
+### API additions for the agent
+```
+DELETE /api/database/reset   Clear all logs/events/alerts from SQLite (also clears in-memory profiles)
+GET    /api/events/recent     Load last N events from DB (used by dashboard on page load)
+```
+
+### Dashboard additions
+- Detection Log pre-populated from DB on page open (`loadRecentEvents()` in dashboard.html)
+- "Clear Logs" button on Detection Log header — calls `DELETE /api/database/reset`
+
 ## Recent Fixes (2026-04-10)
 - ETL pipeline: `risky_web` now detected from `category` field (`tor`/`cloud_storage`/`file_sharing`)
 - UEBA thresholds lowered: `bulk_download` 500→200 MB, `usb_exfil` 100→50 MB, `risky_web` weight 10→20
 - Company portal: per-user isolated state (localStorage), dept-specific filesystems and emails
 - Download button added: real file download via `/api/files/download` with generated content
 - Activity log sidebar removed from company portal (logs only in InsightGuard dashboard)
+- Nexon endpoint agent built (`nexon_agent/`) — real Windows monitoring, deployed and tested
+- Dashboard loads past events on open (`/api/events/recent`), Clear Logs button added

@@ -16,6 +16,7 @@ import os
 import platform
 import queue
 import fnmatch
+import subprocess
 
 import sqlite3
 import sys
@@ -105,6 +106,10 @@ _log_lines: list[str] = []
 _log_lock = threading.Lock()
 _stats = {"sent": 0, "errors": 0, "alerts": 0}
 _screenshot: ScreenshotCapture | None = None
+
+# Screenshot rate-limit: at most one screenshot per user per N seconds.
+_screenshot_last: dict[str, float] = {}
+_SCREENSHOT_COOLDOWN = 15  # seconds
 
 # ── Threat behaviour engine ───────────────────────────────────────────────────
 # Tracks recent events in a rolling window to detect multi-step threat patterns.
@@ -249,12 +254,24 @@ def _sender_thread(cfg: dict):
                 resp_data = resp.json()
                 score = resp_data.get("risk_score", "?")
                 _add_log(f"{G}[SENT]{RST} {payload.get('source','?')} → score {score}")
-                if isinstance(score, (int, float)) and score >= 60 and _screenshot:
-                    _screenshot.capture(
-                        trigger_type="severity",
-                        event_type=payload.get("activity_type", payload.get("source", "unknown")),
-                        log_id=resp_data.get("log_id", ""),
-                    )
+                if isinstance(score, (int, float)) and score >= 45 and _screenshot:
+                    uid = payload.get("user_id", "")
+                    now = time.time()
+                    severity = resp_data.get("severity", "")
+                    # Critical events always get a screenshot — bypass cooldown
+                    is_critical = severity == "critical" or score >= 80
+                    cooldown_ok = is_critical or (now - _screenshot_last.get(uid, 0) >= _SCREENSHOT_COOLDOWN)
+                    if cooldown_ok:
+                        _screenshot_last[uid] = now
+                        ok = _screenshot.capture(
+                            trigger_type="severity",
+                            event_type=payload.get("activity_type", payload.get("source", "unknown")),
+                            log_id=resp_data.get("log_id", ""),
+                        )
+                        if ok:
+                            _add_log(f"{G}[SCREENSHOT]{RST} Captured — score {score}, id {resp_data.get('log_id','?')}")
+                        else:
+                            _add_log(f"{Y}[SCREENSHOT]{RST} Capture failed — check mss/Pillow installation")
             else:
                 _stats["errors"] += 1
                 _add_log(f"{Y}[WARN]{RST} Server returned {resp.status_code}")
@@ -293,6 +310,19 @@ def _file_size_mb(path: str) -> float:
 
 
 _AGENT_ARCHIVE_EXTS = {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"}
+
+# Deduplication cache: path → timestamp of last reported event.
+# Prevents watchdog and ArchivePollMonitor from both firing for the same file.
+_archive_reported: dict[str, float] = {}
+_ARCHIVE_DEDUP_TTL = 30  # seconds
+
+
+def _archive_already_reported(path: str) -> bool:
+    return (time.time() - _archive_reported.get(path, 0)) < _ARCHIVE_DEDUP_TTL
+
+
+def _mark_archive_reported(path: str) -> None:
+    _archive_reported[path] = time.time()
 
 
 def _classify_sensitivity(filename: str, cfg: dict) -> str:
@@ -351,6 +381,13 @@ class _FileEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = event.src_path
+        # Skip files inside the agent's own directory (e.g. evidence screenshots)
+        _agent_dir = str(Path(__file__).parent.resolve())
+        try:
+            if str(Path(path).resolve()).startswith(_agent_dir):
+                return
+        except Exception:
+            pass
         now = time.time()
         # Debounce: same file within 2s → ignore
         if now - self._debounce.get(path, 0) < 2:
@@ -363,7 +400,14 @@ class _FileEventHandler(FileSystemEventHandler):
                           sensitivity in ("critical", "confidential") or
                           Path(path).suffix.lower() in self._cfg.get("sensitive_extensions", [])
                       )
-        fname = Path(path).name
+        fname   = Path(path).name
+        is_arch = os.path.splitext(fname)[1].lower() in _AGENT_ARCHIVE_EXTS
+        # Dedup: if another detector already reported this archive, skip entirely
+        if is_arch:
+            if _archive_already_reported(path):
+                return
+            _mark_archive_reported(path)
+            print(f"[ARCHIVE DETECTED] watchdog on_created/modified: {fname}  is_archive=True  sending to server")
         payload = _base(self._cfg, "dlp_system")
         payload.update({
             "source":      "file",
@@ -375,14 +419,14 @@ class _FileEventHandler(FileSystemEventHandler):
             "destination": "local",
             "sensitive":   sensitive,
             "sensitivity": sensitivity,
-            "is_archive":  os.path.splitext(fname)[1].lower() in _AGENT_ARCHIVE_EXTS,
+            "is_archive":  is_arch,
         })
         enqueue_event(payload)
         _record_behaviour("file_write", sensitive=sensitive, path=fname)
         _check_threat_patterns(self._cfg)
-
-        colour = Y if sensitive else DIM
-        _add_log(f"{colour}[FILE]{RST} {operation.upper()} {fname} ({size_mb:.2f} MB)")
+        colour = R if is_arch else (Y if sensitive else DIM)
+        label  = "ARCHIVE" if is_arch else operation.upper()
+        _add_log(f"{colour}[FILE]{RST} {label} {fname} ({size_mb:.2f} MB)")
 
     def on_created(self, event):
         self._handle(event, "write")
@@ -391,33 +435,132 @@ class _FileEventHandler(FileSystemEventHandler):
         self._handle(event, "write")
 
     def on_moved(self, event):
-        # Treat moves as copy then delete
         if event.is_directory:
             return
-        path = event.src_path
-        dest = getattr(event, "dest_path", "unknown")
-        dest_filename = os.path.basename(dest)
-        size_mb = _file_size_mb(dest)
-        sensitive = _is_sensitive(path, self._cfg)
-        sensitivity = _classify_sensitivity(path, self._cfg)
+        src  = event.src_path
+        dest = getattr(event, "dest_path", "")
+        dest_filename = os.path.basename(dest) if dest else os.path.basename(src)
+        # Rename = same directory; Move = different directory
+        is_rename = dest and (os.path.dirname(src) == os.path.dirname(dest))
+        operation = "rename" if is_rename else "move"
+        size_mb = _file_size_mb(dest or src)
+        sensitive = _is_sensitive(src, self._cfg)
+        sensitivity = _classify_sensitivity(src, self._cfg)
+        is_arch_dest = os.path.splitext(dest_filename)[1].lower() in _AGENT_ARCHIVE_EXTS
+        # When the destination is an archive, use the destination filename — temp-rename
+        # (e.g. 9A3B.tmp → archive.zip) should show the .zip name, not the temp name.
+        display_name = dest_filename if is_arch_dest else os.path.basename(src)
+        # Dedup: if another detector already reported this archive, skip entirely
+        if is_arch_dest:
+            dest_path_str = dest if dest else src
+            if _archive_already_reported(dest_path_str):
+                return
+            _mark_archive_reported(dest_path_str)
+            print(f"[ARCHIVE DETECTED] watchdog on_moved→archive: {Path(src).name} → {dest_filename}  is_archive=True  sending to server")
         payload = _base(self._cfg, "dlp_system")
         payload.update({
             "source":      "file",
-            "file_path":   path,
-            "operation":   "copy",
+            "file_path":   dest if (is_arch_dest and dest) else src,
+            "file_name":   display_name,
+            "operation":   "compress" if is_arch_dest else operation,
+            "destination": dest,
             "file_count":  1,
             "data_mb":     size_mb,
-            "destination": dest,
             "sensitive":   sensitive,
             "sensitivity": sensitivity,
-            "is_archive":  os.path.splitext(dest_filename)[1].lower() in _AGENT_ARCHIVE_EXTS,
+            "is_archive":  is_arch_dest,
         })
         enqueue_event(payload)
-        colour = Y if sensitive else DIM
-        _add_log(f"{colour}[FILE]{RST} MOVE {Path(path).name} → {Path(dest).name}")
+        if is_arch_dest:
+            _add_log(f"{R}[FILE]{RST} ARCHIVE {dest_filename} ({size_mb:.2f} MB)")
+        else:
+            colour = Y if sensitive else DIM
+            label = "RENAME" if is_rename else "MOVE"
+            _add_log(f"{colour}[FILE]{RST} {label} {Path(src).name} → {Path(dest).name if dest else '?'}")
 
     def on_deleted(self, event):
         self._handle(event, "delete")
+
+
+def _get_real_user_folders() -> list[Path]:
+    """
+    Return the REAL Desktop, Documents, and Downloads paths using the Windows
+    registry (User Shell Folders).  This is the only reliable method when
+    OneDrive Known Folder Move is enabled — it redirects these folders to
+    e.g. C:\\Users\\Emily\\OneDrive\\Desktop, but %USERPROFILE%\\Desktop still
+    exists (empty).  The registry always points to the live location.
+
+    Falls back to %USERPROFILE%\\Desktop/Documents/Downloads if winreg fails.
+    """
+    folders: list[Path] = []
+    try:
+        import winreg
+        # User Shell Folders — values may contain %USERPROFILE% which we expand
+        REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        # (Desktop, Personal=Documents, Downloads GUID)
+        NAMES = [
+            "Desktop",
+            "Personal",
+            "{374DE290-123F-4565-9164-39C4925E467B}",  # Downloads
+        ]
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY) as key:
+            for name in NAMES:
+                try:
+                    raw, _ = winreg.QueryValueEx(key, name)
+                    expanded = os.path.expandvars(raw)
+                    p = Path(expanded)
+                    if p.exists():
+                        folders.append(p)
+                except FileNotFoundError:
+                    pass
+    except Exception:
+        pass
+
+    if not folders:
+        # Fallback: standard paths under %USERPROFILE%
+        base = Path(os.environ.get("USERPROFILE", os.path.expanduser("~")))
+        for sub in ("Desktop", "Documents", "Downloads"):
+            p = base / sub
+            if p.exists():
+                folders.append(p)
+
+    return folders
+
+
+def _extra_monitor_paths() -> list[Path]:
+    """
+    Return additional paths to watch beyond what's in config.
+    Uses registry to get the real Desktop/Documents/Downloads (handles OneDrive
+    Known Folder Move).  Also scans %USERPROFILE%\\OneDrive* subdirectories as
+    a belt-and-suspenders fallback.
+    """
+    seen: set[Path] = set()
+    extra: list[Path] = []
+
+    def _add(p: Path):
+        rp = p.resolve() if p.exists() else p
+        if rp not in seen:
+            seen.add(rp)
+            extra.append(p)
+
+    # Primary: registry-backed real paths
+    for p in _get_real_user_folders():
+        _add(p)
+
+    # Belt-and-suspenders: any OneDrive-named subdirs under %USERPROFILE%
+    userprofile = Path(os.environ.get("USERPROFILE", os.path.expanduser("~")))
+    if userprofile.exists():
+        try:
+            for entry in userprofile.iterdir():
+                if entry.is_dir() and entry.name.lower().startswith("onedrive"):
+                    for sub in ("Desktop", "Documents", "Downloads"):
+                        p = entry / sub
+                        if p.exists():
+                            _add(p)
+        except (PermissionError, OSError):
+            pass
+
+    return extra
 
 
 def start_file_monitor(cfg: dict) -> Observer | None:
@@ -426,6 +569,11 @@ def start_file_monitor(cfg: dict) -> Observer | None:
         return None
 
     paths = expand_paths(cfg.get("monitor_paths", []))
+    # Also watch OneDrive-redirected folders (Desktop/Documents/Downloads may live there)
+    for p in _extra_monitor_paths():
+        if p not in paths:
+            paths.append(p)
+
     observer = Observer()
     handler  = _FileEventHandler(cfg)
     watched  = 0
@@ -453,6 +601,149 @@ def start_file_monitor(cfg: dict) -> Observer | None:
 
     observer.start()
     return observer
+
+
+class ArchivePollMonitor:
+    """
+    Polls common Windows user directories every 5 seconds for newly created
+    archive files (.zip, .rar, .7z, .tar, .gz, .bz2).  This is a supplement
+    to watchdog — it catches archives created outside the three monitored paths
+    (e.g. right-clicking on the Desktop when Desktop isn't watched, or using
+    7-Zip which may write to a temp location then rename).
+
+    Tracks file mtimes in `_seen` to avoid re-reporting the same archive.
+    """
+
+    POLL_INTERVAL = 5    # seconds between scans
+
+    def __init__(self, cfg: dict):
+        self._cfg = cfg
+        base = Path(os.environ.get("USERPROFILE", os.path.expanduser("~")))
+        extra_paths = [
+            base,
+            base / "Desktop",
+            base / "Documents",
+            base / "Downloads",
+            base / "Music",
+            base / "Videos",
+            base / "Pictures",
+        ]
+        # Include OneDrive-redirected Desktop/Documents/Downloads
+        for p in _extra_monitor_paths():
+            extra_paths.append(p)
+        monitored = expand_paths(cfg.get("monitor_paths", []))
+        all_paths = list({p.resolve() for p in extra_paths + monitored if p.exists()})
+        self._paths = all_paths
+        # path → mtime at last report. Seeded at startup so pre-existing archives
+        # are never re-reported; only archives that appear AFTER startup fire events.
+        self._reported: dict[str, float] = {}
+        self._thread = threading.Thread(target=self._run, daemon=True, name="archive-poll")
+
+    def start(self):
+        self._thread.start()
+        print(f"[ARCHIVE POLL] Starting — watching {len(self._paths)} directories:")
+        for p in self._paths:
+            print(f"  [ARCHIVE POLL]   {p}")
+
+    def _run(self):
+        # Seed: snapshot all archives currently on disk so we don't fire on old files.
+        try:
+            self._seed()
+        except Exception as e:
+            print(f"[ARCHIVE POLL] Seed error: {e}")
+        while True:
+            time.sleep(self.POLL_INTERVAL)
+            try:
+                self._scan()
+            except Exception as e:
+                _add_log(f"{DIM}[ARCHIVE POLL]{RST} Scan error: {e}")
+
+    def _iter_archives(self):
+        """Yield DirEntry objects for all archives in monitored paths (2 levels deep)."""
+        for base_path in self._paths:
+            try:
+                for entry in os.scandir(base_path):
+                    if entry.is_dir(follow_symlinks=False):
+                        try:
+                            for sub in os.scandir(entry.path):
+                                yield sub
+                        except (PermissionError, OSError):
+                            pass
+                    else:
+                        yield entry
+            except (PermissionError, OSError):
+                pass
+
+    def _seed(self):
+        """Record mtimes of all existing archives WITHOUT firing events."""
+        count = 0
+        for entry in self._iter_archives():
+            try:
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                if os.path.splitext(entry.name)[1].lower() not in _AGENT_ARCHIVE_EXTS:
+                    continue
+                stat = entry.stat(follow_symlinks=False)
+                self._reported[entry.path] = stat.st_mtime
+                count += 1
+            except (PermissionError, OSError):
+                pass
+        print(f"[ARCHIVE POLL] Seeded {count} existing archives — new ones will be detected within {self.POLL_INTERVAL}s")
+        _add_log(f"{G}[ARCHIVE POLL]{RST} Seeded {count} existing archives — new ones will be detected")
+
+    def _scan(self):
+        for entry in self._iter_archives():
+            self._check_entry(entry)
+
+    def _check_entry(self, entry):
+        try:
+            if not entry.is_file(follow_symlinks=False):
+                return
+            ext = os.path.splitext(entry.name)[1].lower()
+            if ext not in _AGENT_ARCHIVE_EXTS:
+                return
+            stat = entry.stat(follow_symlinks=False)
+            mtime = stat.st_mtime
+            prev_mtime = self._reported.get(entry.path)
+            if prev_mtime is None:
+                # Archive appeared after startup — always fire
+                self._reported[entry.path] = mtime
+                self._fire(entry.path, entry.name, stat.st_size)
+            elif abs(mtime - prev_mtime) >= 1:
+                # Archive was replaced or overwritten
+                self._reported[entry.path] = mtime
+                self._fire(entry.path, entry.name, stat.st_size)
+        except (PermissionError, OSError):
+            pass
+
+    def _fire(self, path: str, fname: str, size_bytes: int):
+        if _archive_already_reported(path):
+            return
+        _mark_archive_reported(path)
+        size_mb = size_bytes / 1_048_576
+        sensitivity = _classify_sensitivity(path, self._cfg)
+        sensitive   = sensitivity != "public" and (
+                          sensitivity in ("critical", "confidential") or
+                          Path(path).suffix.lower() in self._cfg.get("sensitive_extensions", [])
+                      )
+        payload = _base(self._cfg, "dlp_system")
+        payload.update({
+            "source":      "file",
+            "file_path":   path,
+            "file_name":   fname,
+            "operation":   "compress",
+            "file_count":  1,
+            "data_mb":     size_mb,
+            "destination": "local",
+            "sensitive":   sensitive,
+            "sensitivity": sensitivity,
+            "is_archive":  True,
+        })
+        enqueue_event(payload)
+        _record_behaviour("file_write", sensitive=True, path=fname)
+        _check_threat_patterns(self._cfg)
+        print(f"[ARCHIVE POLL DETECTED] {fname}  is_archive=True  sending to server")
+        _add_log(f"{R}[ARCHIVE]{RST} New archive detected: {fname} ({size_mb:.2f} MB)")
 
 
 class _RecentFilesHandler(FileSystemEventHandler):
@@ -528,10 +819,13 @@ def _get_usb_drives() -> set[str]:
 
 
 class USBMonitor:
+    _TRANSFER_COOLDOWN = 10  # seconds — don't fire repeated transfer events for the same drive
+
     def __init__(self, cfg: dict):
         self._cfg = cfg
         self._known_drives: set[str] = _get_usb_drives()
         self._file_snapshots: dict[str, dict[str, float]] = {}
+        self._last_transfer_time: dict[str, float] = {}
         self._interval = cfg.get("usb_poll_interval_seconds", 5)
         self._thread = threading.Thread(target=self._run, daemon=True, name="usb-monitor")
 
@@ -584,13 +878,17 @@ class USBMonitor:
             "data_mb":         0,
             "usb_transfer":    True,   # flag so UEBA usb_insert rule fires
             "usb_data_mb":     0,
-            "severity_override": "suspicious",
+            "severity_override": "critical",
         })
         enqueue_event(payload)
         _record_behaviour("usb_insert", path=drive)
         _check_threat_patterns(self._cfg)
         _stats["alerts"] += 1
-        _add_log(f"{R}[USB INSERTED]{RST} {drive} — flagged suspicious")
+        _add_log(f"{R}[USB INSERTED]{RST} {drive} — flagged critical")
+        # Always capture a screenshot on USB insert — bypass the normal cooldown
+        # since physical device insertion is always worth immediate evidence.
+        uid = self._cfg.get("user_id", "")
+        _screenshot_last[uid] = 0  # reset cooldown so sender thread fires screenshot
         # Take initial snapshot so we can detect new files written
         self._file_snapshots[drive] = self._snapshot_drive(drive)
 
@@ -621,6 +919,13 @@ class USBMonitor:
                 total_mb += (fsize - old_size) / 1_048_576
 
         if transferred_files:
+            # Cooldown: if a transfer event for this drive fired recently, skip to avoid
+            # duplicate alerts when a large copy spans multiple poll cycles.
+            now = time.time()
+            if now - self._last_transfer_time.get(drive, 0) < self._TRANSFER_COOLDOWN:
+                self._file_snapshots[drive] = new_snap  # keep snapshot up to date
+                return
+            self._last_transfer_time[drive] = now
             fnames = [os.path.basename(f) for f in transferred_files[:20]]
 
             # Build per-sensitivity-level counts
@@ -629,6 +934,7 @@ class USBMonitor:
                 level = _classify_sensitivity(fname, self._cfg)
                 sensitivity_summary[level] = sensitivity_summary.get(level, 0) + 1
 
+            has_sensitive = any(_is_sensitive(f, self._cfg) for f in fnames)
             payload = _base(self._cfg, "endpoint_agent")
             payload.update({
                 "source":               "usb",
@@ -642,17 +948,237 @@ class USBMonitor:
                 "file_name":            ", ".join(fnames[:5]),
                 "file_path":            ", ".join(fnames[:5]),
                 "sensitivity_summary":  sensitivity_summary,
+                "sensitive":            has_sensitive,
+                # Any file transfer to USB is always at least critical
+                "severity_override":    "critical",
             })
             enqueue_event(payload)
             for f in fnames:
                 _record_behaviour("usb_transfer", sensitive=_is_sensitive(f, self._cfg), path=f)
             _check_threat_patterns(self._cfg)
+            label = f"{R}[USB TRANSFER — CRITICAL]{RST}" if has_sensitive else f"{R}[USB TRANSFER]{RST}"
             _add_log(
-                f"{R}[USB TRANSFER]{RST} {len(transferred_files)} file(s) → {drive} "
+                f"{label} {len(transferred_files)} file(s) → {drive} "
                 f"({total_mb:.2f} MB): {', '.join(fnames[:3])}"
             )
 
         self._file_snapshots[drive] = new_snap
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DNS Cache Monitor — catches ALL browser visits without touching browser files
+# ══════════════════════════════════════════════════════════════════════════════
+
+_CREATE_NO_WINDOW = 0x08000000 if platform.system() == "Windows" else 0
+
+# Domains that are Windows system noise, not user browsing
+_DNS_SKIP_SUFFIXES = (
+    ".microsoft.com", ".windows.com", ".windowsupdate.com",
+    ".msftncsi.com", ".msftconnecttest.com", ".msecnd.net",
+    ".akadns.net", ".akamaiedge.net", ".akamaized.net",
+    ".doubleclick.net", ".googlesyndication.com",
+    ".googletagmanager.com", ".googletagservices.com",
+    ".gstatic.com", ".googleapis.com", ".google-analytics.com",
+    ".in-addr.arpa", ".arpa", ".local", ".lan",
+    # App/extension background traffic
+    ".discordapp.com", ".discord.com", ".discord.gg",
+    ".steampowered.com", ".steamcontent.com", ".steamstatic.com",
+    ".epicgames.com", ".unrealengine.com",
+    ".apple.com", ".icloud.com",
+    ".office.com", ".office365.com", ".live.com", ".sharepoint.com",
+    ".digicert.com", ".sectigo.com", ".letsencrypt.org",
+    ".cloudflare.com", ".cloudflare-dns.com",
+    ".amazonaws.com", ".awsstatic.com",
+    ".fastly.net", ".cloudfront.net",
+    ".adobe.com", ".adobedtm.com",
+    ".nr-data.net", ".newrelic.com",
+    ".sentry.io", ".segment.io",
+    # GitHub background / telemetry (VS Code, Copilot, extensions)
+    ".githubusercontent.com", ".githubassets.com", ".github.io",
+    "copilot-telemetry.githubusercontent.com",
+    # Zoom, Teams, Slack background
+    ".zoom.us", ".zoomgov.com",
+    ".slack.com", ".slack-edge.com",
+    ".skype.com", ".teams.microsoft.com",
+)
+_DNS_SKIP_EXACT = {"localhost", "wpad", "isatap", "teredo"}
+
+
+def _read_dns_cache_with_ttl() -> dict[str, int]:
+    """
+    Return domain → max(TTL) mapping from Windows DNS cache.
+    TTL is seconds remaining. When a user visits a site, TTL resets to near-max.
+    """
+    try:
+        r = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command",
+             "Get-DnsClientCache | Select-Object Entry,TimeToLive | ConvertTo-Json"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            raw = r.stdout.strip()
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                data = [data]
+            result: dict[str, int] = {}
+            for item in data:
+                d = str(item.get("Entry") or "").strip().lower().rstrip(".")
+                ttl = int(item.get("TimeToLive") or 0)
+                if d and "." in d:
+                    result[d] = max(result.get(d, 0), ttl)
+            return result
+    except Exception:
+        pass
+    # Fallback: no TTL available — return names with TTL=0
+    return {d: 0 for d in _read_dns_cache()}
+
+
+def _read_dns_cache() -> set[str]:
+    """
+    Return all domain names currently in the Windows DNS cache.
+    Tries PowerShell first (cleaner), falls back to ipconfig /displaydns.
+    """
+    # PowerShell: Get-DnsClientCache (Windows 8+, fast, structured)
+    try:
+        r = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command",
+             "Get-DnsClientCache | Select-Object -ExpandProperty Entry"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            domains = set()
+            for line in r.stdout.splitlines():
+                d = line.strip().lower().rstrip(".")
+                if d and "." in d:
+                    domains.add(d)
+            return domains
+    except Exception:
+        pass
+
+    # Fallback: ipconfig /displaydns
+    try:
+        r = subprocess.run(
+            ["ipconfig", "/displaydns"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        domains = set()
+        for line in r.stdout.splitlines():
+            if "Record Name" in line and ":" in line:
+                d = line.split(":", 1)[1].strip().lower().rstrip(".")
+                if d and "." in d:
+                    domains.add(d)
+        return domains
+    except Exception:
+        return set()
+
+
+def _dns_is_noise(domain: str) -> bool:
+    """Return True for system/CDN/tracker domains that aren't user browsing."""
+    if domain in _DNS_SKIP_EXACT:
+        return True
+    if re.match(r"^\d+\.\d+\.\d+\.\d+$", domain):
+        return True   # raw IP
+    for suffix in _DNS_SKIP_SUFFIXES:
+        if domain.endswith(suffix):
+            return True
+    return False
+
+
+class DnsMonitor:
+    """
+    Polls the Windows DNS cache every N seconds.
+    Reports any new domain that appears since last poll as a web event.
+    Works for ALL browsers (Chrome, Edge, Firefox) and even incognito mode.
+    """
+
+    def __init__(self, cfg: dict):
+        self._cfg      = cfg
+        self._interval = cfg.get("browser_poll_interval_seconds", 10)
+        self._seen: set[str] = set()
+        self._ttls:  dict[str, int]   = {}   # domain → last seen TTL
+        self._blocked_reported: dict[str, float] = {}
+        self._thread   = threading.Thread(target=self._run, daemon=True, name="dns-monitor")
+
+    def start(self):
+        ttl_data = _read_dns_cache_with_ttl()
+        self._seen = set(ttl_data.keys())
+        self._ttls = dict(ttl_data)   # baseline TTLs — an increase means fresh visit
+        self._thread.start()
+        _add_log(f"{G}[DNS MONITOR]{RST} Started — {len(self._seen)} existing entries baselined")
+
+    def _run(self):
+        while True:
+            time.sleep(self._interval)
+            try:
+                self._poll()
+            except Exception as e:
+                _add_log(f"{DIM}[DNS]{RST} Poll error: {e}")
+
+    def _poll(self):
+        ttl_data = _read_dns_cache_with_ttl()
+        current  = set(ttl_data.keys())
+        new_domains = current - self._seen
+        self._seen   = current
+
+        blocked_sites = [s.lower() for s in self._cfg.get("blocked_sites", [])]
+
+        # ── Report all new non-noise domains ────────────────────────────────
+        # DNS gives the domain name; BrowserMonitor gives the exact URL.
+        # We report all new domains so any user navigation shows up, even when
+        # browser history is unavailable (locked DB, no browser, incognito).
+        for domain in new_domains:
+            if _dns_is_noise(domain):
+                continue
+            self._report(domain)
+
+        # ── TTL-based: blocked domain already in cache was re-visited ────────
+        # Fresh DNS lookup resets TTL near-max. If TTL went UP vs last poll
+        # the user just visited that domain.
+        for domain in current - new_domains:
+            if not any(b in domain for b in blocked_sites):
+                continue
+            new_ttl = ttl_data.get(domain, 0)
+            old_ttl = self._ttls.get(domain, 9999)   # high default → won't fire on first poll
+            if new_ttl > old_ttl + 5:
+                self._report(domain)
+
+        self._ttls = ttl_data
+
+    def _report(self, domain: str):
+        url = f"https://{domain}/"
+        cat, is_blocked, is_suspicious = _classify_url(url, self._cfg)
+        risky = is_blocked or cat in ("tor", "cloud_storage", "file_sharing")
+
+        payload = _base(self._cfg, "web_proxy")
+        payload.update({
+            "source":     "web",
+            "url":        url,
+            "site_name":  domain,
+            "page_title": domain,
+            "category":   cat,
+            "bytes_out":  0,
+            "blocked":    is_blocked,
+            "risky":      risky,
+            "browser":    "dns",
+        })
+        enqueue_event(payload)
+
+        if is_blocked:
+            _record_behaviour("blocked_site", path=domain)
+            _check_threat_patterns(self._cfg)
+            _stats["alerts"] += 1
+            print(f"\n{R}{'!'*50}{RST}")
+            print(f"{R}  BLOCKED SITE (DNS): {domain}{RST}")
+            print(f"{R}  Sending critical event to InsightGuard...{RST}")
+            print(f"{R}{'!'*50}{RST}\n")
+            _add_log(f"{R}[BLOCKED]{RST} {domain} — {cat}")
+        elif is_suspicious or risky:
+            _add_log(f"{Y}[DNS]{RST} {domain} — {cat}")
+        else:
+            _add_log(f"{C}[DNS]{RST} {domain}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -665,18 +1191,40 @@ class USBMonitor:
 _LOCAL = os.environ.get("LOCALAPPDATA", "")
 _ROAMING = os.environ.get("APPDATA", "")
 
-_BROWSER_PROFILES = {
-    "Chrome": [
-        Path(_LOCAL) / "Google" / "Chrome" / "User Data" / "Default" / "History",
-        Path(_LOCAL) / "Google" / "Chrome" / "User Data" / "Profile 1" / "History",
-        Path(_LOCAL) / "Google" / "Chrome" / "User Data" / "Profile 2" / "History",
-    ],
-    "Edge": [
-        Path(_LOCAL) / "Microsoft" / "Edge" / "User Data" / "Default" / "History",
-        Path(_LOCAL) / "Microsoft" / "Edge" / "User Data" / "Profile 1" / "History",
-        Path(_LOCAL) / "Microsoft" / "Edge" / "User Data" / "Profile 2" / "History",
-    ],
-}
+_CHROME_NON_PROFILE_DIRS = {"System Profile", "GrShaderCache", "ShaderCache",
+                            "Crashpad", "BrowserMetrics", "hyphen-data",
+                            "PepperFlash", "WidevineCdm", "SSLErrorAssistant"}
+
+def _find_chrome_like_histories(user_data_dir: Path) -> list[Path]:
+    """Scan all profile folders under Chrome/Edge User Data for History files.
+    Skips internal Chrome system directories that aren't user profiles."""
+    paths = []
+    if not user_data_dir.exists():
+        return paths
+    for entry in user_data_dir.iterdir():
+        if not entry.is_dir() or entry.name in _CHROME_NON_PROFILE_DIRS:
+            continue
+        h = entry / "History"
+        if h.exists():
+            paths.append(h)
+    return paths
+
+
+_CHROME_USER_DATA  = Path(_LOCAL) / "Google" / "Chrome" / "User Data"
+_EDGE_USER_DATA    = Path(_LOCAL) / "Microsoft" / "Edge" / "User Data"
+_BRAVE_USER_DATA   = Path(_LOCAL) / "BraveSoftware" / "Brave-Browser" / "User Data"
+_OPERA_USER_DATA   = Path(_ROAMING) / "Opera Software" / "Opera Stable"
+_CHROME_BETA_DATA  = Path(_LOCAL) / "Google" / "Chrome Beta" / "User Data"
+_VIVALDI_USER_DATA = Path(_LOCAL) / "Vivaldi" / "User Data"
+
+_ALL_CHROMIUM_PROFILES = [
+    ("Chrome",  _CHROME_USER_DATA),
+    ("Edge",    _EDGE_USER_DATA),
+    ("Brave",   _BRAVE_USER_DATA),
+    ("Opera",   _OPERA_USER_DATA),
+    ("ChromeBeta", _CHROME_BETA_DATA),
+    ("Vivaldi", _VIVALDI_USER_DATA),
+]
 
 
 def _find_firefox_history() -> list[Path]:
@@ -691,25 +1239,135 @@ def _find_firefox_history() -> list[Path]:
 
 
 def _read_chrome_history(db_path: Path, since_ts: int) -> list[dict]:
-    """Read Chrome/Edge history directly in read-only mode — works even when browser is open."""
-    rows = []
-    try:
-        # immutable=1 bypasses locking — safe for read-only access to a live browser DB
-        uri = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
-        con = sqlite3.connect(uri, uri=True, timeout=2)
-        # Chrome/Edge store time as microseconds since 1601-01-01
-        chrome_since = since_ts + int(11644473600 * 1_000_000)
+    """
+    Read Chrome/Edge history.  Three attempts in order:
+      1. immutable=1 URI  — works while Chrome is open (shared read lock), no copy needed
+      2. temp-dir copy    — copies History + WAL + SHM, merges WAL automatically
+      3. plain read       — last resort fallback
+    """
+    import shutil, tempfile
+    chrome_since = since_ts + int(11644473600 * 1_000_000)
+
+    def _query(con) -> list[dict]:
         cur = con.execute(
             "SELECT url, title, last_visit_time FROM urls "
             "WHERE last_visit_time > ? ORDER BY last_visit_time",
             (chrome_since,)
         )
-        for url, title, _ in cur.fetchall():
-            rows.append({"url": url, "title": title or ""})
+        return [{"url": u, "title": t or ""} for u, t, _ in cur.fetchall()]
+
+    # ── Method 1: immutable URI (fastest, works with FILE_SHARE_READ) ──────────
+    try:
+        uri = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
+        con = sqlite3.connect(uri, uri=True, timeout=2)
+        rows = _query(con)
         con.close()
+        return rows
+    except Exception:
+        pass
+
+    # ── Method 2: temp-dir copy including WAL (gets uncommitted Chrome writes) ──
+    tmp_dir = None
+    try:
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_db  = tmp_dir / "History"
+        shutil.copy2(str(db_path), str(tmp_db))
+        for ext in ("-wal", "-shm"):
+            src = db_path.with_name(db_path.name + ext)
+            if src.exists():
+                shutil.copy2(str(src), str(tmp_dir / ("History" + ext)))
+        con  = sqlite3.connect(str(tmp_db), timeout=2)
+        rows = _query(con)
+        con.close()
+        return rows
+    except Exception:
+        pass
+    finally:
+        if tmp_dir:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+    # ── Method 3: plain open (last resort) ────────────────────────────────────
+    try:
+        con  = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True, timeout=2)
+        rows = _query(con)
+        con.close()
+        return rows
     except Exception as e:
-        _add_log(f"{DIM}[BROWSER]{RST} Could not read {db_path.parent.name}: {e}")
-    return rows
+        _add_log(f"{Y}[BROWSER]{RST} Cannot read {db_path.parent.name}: {e}")
+        return []
+
+
+def _read_chrome_history_visits(db_path: Path, since_chrome_ts: int) -> list[dict]:
+    """
+    Read Chrome/Edge history using the visits table JOIN urls.
+    The visits table is updated per-navigation-event (more immediate than last_visit_time).
+    since_chrome_ts: Chrome FILETIME (microseconds since 1601-01-01)
+    Falls back to urls.last_visit_time if visits table is unavailable.
+    """
+    import shutil, tempfile
+
+    def _query(con) -> list[dict]:
+        try:
+            cur = con.execute(
+                "SELECT u.url, u.title, v.visit_time "
+                "FROM visits v JOIN urls u ON v.url = u.id "
+                "WHERE v.visit_time > ? ORDER BY v.visit_time",
+                (since_chrome_ts,)
+            )
+            return [{"url": u, "title": t or "", "visit_time": vt}
+                    for u, t, vt in cur.fetchall()]
+        except Exception:
+            # Fallback to urls table
+            cur = con.execute(
+                "SELECT url, title, last_visit_time FROM urls "
+                "WHERE last_visit_time > ? ORDER BY last_visit_time",
+                (since_chrome_ts,)
+            )
+            return [{"url": u, "title": t or "", "visit_time": vt}
+                    for u, t, vt in cur.fetchall()]
+
+    # Method 1: temp-dir copy including WAL (WAL-aware — picks up visits Chrome
+    # has written to WAL but not yet checkpointed into the main DB file).
+    # This is the correct primary approach for Chrome's WAL-mode database.
+    tmp_dir = None
+    try:
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_db = tmp_dir / "History"
+        shutil.copy2(str(db_path), str(tmp_db))
+        for ext in ("-wal", "-shm"):
+            src = db_path.with_name(db_path.name + ext)
+            if src.exists():
+                shutil.copy2(str(src), str(tmp_dir / ("History" + ext)))
+        con = sqlite3.connect(str(tmp_db), timeout=2)
+        rows = _query(con)
+        con.close()
+        return rows
+    except Exception:
+        pass
+    finally:
+        if tmp_dir:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+    # Method 2: mode=ro (WAL-aware if Chrome allows shared reads)
+    try:
+        uri = f"file:{db_path.as_posix()}?mode=ro"
+        con = sqlite3.connect(uri, uri=True, timeout=2)
+        rows = _query(con)
+        con.close()
+        return rows
+    except Exception:
+        pass
+
+    # Method 3: immutable=1 (bypasses WAL — reads stale main DB, last resort only)
+    try:
+        uri = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
+        con = sqlite3.connect(uri, uri=True, timeout=2)
+        rows = _query(con)
+        con.close()
+        return rows
+    except Exception as e:
+        _add_log(f"{Y}[BROWSER]{RST} Cannot read {db_path.parent.name}: {e}")
+        return []
 
 
 def _read_firefox_history(db_path: Path, since_unix_us: int) -> list[dict]:
@@ -734,7 +1392,10 @@ def _read_firefox_history(db_path: Path, since_unix_us: int) -> list[dict]:
 def _domain(url: str) -> str:
     try:
         from urllib.parse import urlparse
-        return urlparse(url).netloc.lower().lstrip("www.")
+        netloc = urlparse(url).netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        return netloc
     except Exception:
         return url
 
@@ -772,14 +1433,44 @@ def _classify_url(url: str, cfg: dict) -> tuple[str, bool, bool]:
 class BrowserMonitor:
     def __init__(self, cfg: dict):
         self._cfg = cfg
-        self._interval = cfg.get("browser_poll_interval_seconds", 10)
-        # Track last seen timestamp (unix microseconds)
-        self._last_ts: int = int(time.time() * 1_000_000)
+        self._interval = cfg.get("browser_poll_interval_seconds", 3)
+        # High-water mark per DB path (Chrome FILETIME). Seeded from the DB's
+        # own max visit_time in start() so no epoch arithmetic is needed.
+        self._chrome_hwm: dict[str, int] = {}   # db_path_str → max visit_time seen
+        # Firefox uses unix microseconds
+        self._last_ff_ts: int = int(time.time() * 1_000_000)
         self._thread = threading.Thread(target=self._run, daemon=True, name="browser-monitor")
 
     def start(self):
         self._thread.start()
         _add_log(f"{G}[BROWSER MONITOR]{RST} Started (polling every {self._interval}s)")
+        found_any = False
+        for browser, user_data in _ALL_CHROMIUM_PROFILES:
+            for db_path in _find_chrome_like_histories(user_data):
+                _add_log(f"{G}[BROWSER]{RST} Found {browser} history: {db_path.parent.name}")
+                found_any = True
+                try:
+                    # Read ALL history to seed the high-water mark from the DB's
+                    # own timestamps — avoids any system clock / epoch conversion issue.
+                    rows = _read_chrome_history_visits(db_path, 0)
+                    if rows:
+                        max_vt = max(r.get("visit_time", 0) for r in rows)
+                        self._chrome_hwm[str(db_path)] = max_vt
+                        _add_log(f"{G}[BROWSER]{RST} {browser} ready — "
+                                 f"{len(rows)} visits in DB, cutoff set to "
+                                 f"last visit ({_domain(rows[-1]['url'])})")
+                    else:
+                        self._chrome_hwm[str(db_path)] = 0
+                        _add_log(f"{Y}[BROWSER]{RST} {browser} DB empty")
+                except Exception as e:
+                    self._chrome_hwm[str(db_path)] = 0
+                    _add_log(f"{Y}[BROWSER]{RST} {browser} read failed: {e}")
+        for db_path in _find_firefox_history():
+            _add_log(f"{G}[BROWSER]{RST} Found Firefox history: {db_path.parent.name}")
+            found_any = True
+        if not found_any:
+            _add_log(f"{Y}[BROWSER]{RST} No browser history DBs found")
+            _add_log(f"{Y}[BROWSER]{RST} Web visits via DNS monitor only")
 
     def _run(self):
         while True:
@@ -788,23 +1479,43 @@ class BrowserMonitor:
 
     def _poll(self):
         visits = []
+        # Deduplicate by domain within a single poll: Chrome creates multiple
+        # rows in `visits` for one navigation (redirect chain), and Edge may
+        # sync the same URL — we only want one event per domain per poll cycle.
+        seen_domains: set[str] = set()
+        now_ff_ts = int(time.time() * 1_000_000)
 
-        # Chrome & Edge
-        for browser, paths in [("Chrome", _BROWSER_PROFILES["Chrome"]), ("Edge", _BROWSER_PROFILES["Edge"])]:
-            for db_path in paths:
-                if db_path.exists():
-                    rows = _read_chrome_history(db_path, self._last_ts)
-                    for r in rows:
+        for browser, user_data in _ALL_CHROMIUM_PROFILES:
+            for db_path in _find_chrome_like_histories(user_data):
+                key = str(db_path)
+                hwm = self._chrome_hwm.get(key, 0)
+                rows = _read_chrome_history_visits(db_path, hwm)
+                for r in rows:
+                    # Always advance the high-water mark so we don't re-read
+                    vt = r.get("visit_time", 0)
+                    if vt > self._chrome_hwm.get(key, 0):
+                        self._chrome_hwm[key] = vt
+                    domain = _domain(r["url"])
+                    if domain and domain not in seen_domains:
+                        seen_domains.add(domain)
                         visits.append({"url": r["url"], "title": r["title"], "browser": browser})
 
-        # Firefox
         for db_path in _find_firefox_history():
-            rows = _read_firefox_history(db_path, self._last_ts)
+            rows = _read_firefox_history(db_path, self._last_ff_ts)
             for r in rows:
-                visits.append({"url": r["url"], "title": r["title"], "browser": "Firefox"})
+                domain = _domain(r["url"])
+                if domain and domain not in seen_domains:
+                    seen_domains.add(domain)
+                    visits.append({"url": r["url"], "title": r["title"], "browser": "Firefox"})
 
-        self._last_ts = int(time.time() * 1_000_000)
+        self._last_ff_ts = now_ff_ts
 
+        if visits:
+            blocked_count = sum(1 for v in visits if _classify_url(v["url"], self._cfg)[1])
+            if blocked_count:
+                _add_log(f"{R}[BROWSER]{RST} {len(visits)} URL(s) — {blocked_count} BLOCKED")
+            else:
+                _add_log(f"{DIM}[BROWSER]{RST} {len(visits)} new URL(s) detected")
         for visit in visits:
             self._handle_visit(visit)
 
@@ -815,6 +1526,14 @@ class BrowserMonitor:
 
         site_name = _domain(url)
         page_title = visit.get("title", "")
+
+        # Detect Gmail compose/send from URL fragment or page title
+        is_compose = any(p in url for p in ("#compose", "/compose", "#sent", "#drafts"))
+        if is_compose and cat == "webmail":
+            cat = "webmail"  # keep category, but note it in page_title
+            if not page_title:
+                page_title = "Gmail — Compose/Send"
+
         payload = _base(self._cfg, "web_proxy")
         payload.update({
             "source":     "web",
@@ -824,8 +1543,9 @@ class BrowserMonitor:
             "category":   cat,
             "bytes_out":  0,
             "blocked":    is_blocked,
-            "risky":      risky,
+            "risky":      risky or is_compose,
             "browser":    visit.get("browser", "unknown"),
+            "is_compose": is_compose,
         })
         enqueue_event(payload)
 
@@ -833,7 +1553,15 @@ class BrowserMonitor:
             _record_behaviour("blocked_site", path=_domain(url))
             _check_threat_patterns(self._cfg)
             _stats["alerts"] += 1
+            print(f"\n{R}{'!'*50}{RST}")
+            print(f"{R}  BLOCKED SITE DETECTED: {_domain(url)}{RST}")
+            print(f"{R}  Sending critical event to InsightGuard...{RST}")
+            print(f"{R}{'!'*50}{RST}\n")
             _add_log(f"{R}[BLOCKED]{RST} {_domain(url)} — {cat}")
+        elif is_compose:
+            _add_log(f"{Y}[WEBMAIL]{RST} {site_name} — compose/send detected")
+        elif cat == "webmail":
+            _add_log(f"{Y}[WEBMAIL]{RST} {site_name} — {page_title or cat}")
         elif is_suspicious:
             _add_log(f"{Y}[SUSPICIOUS]{RST} {_domain(url)} — {cat}")
         else:
@@ -952,7 +1680,7 @@ class BrowserIntelligenceMonitor:
             was_active = self._incognito_active
             self._incognito_active = found
         if found and not was_active:
-            payload = _base(self._cfg, "browser_intel")
+            payload = _base(self._cfg, "web_proxy")
             payload.update({"activity_type": "incognito_detected",
                             "browser": browser_name, "incognito": True})
             enqueue_event(payload)
@@ -978,7 +1706,7 @@ class BrowserIntelligenceMonitor:
             if info is None or self._last_titles.get(tid) == title:
                 continue
             self._last_titles[tid] = title
-            payload = _base(self._cfg, "browser_intel")
+            payload = _base(self._cfg, "web_proxy")
             payload.update({
                 "activity_type":    "webmail_activity",
                 "email_provider":   info["provider"],
@@ -999,16 +1727,17 @@ class BrowserIntelligenceMonitor:
 
     async def _cdp_loop(self):
         import asyncio
-        _logged_unavailable = False
+        _warned = False
         while True:
             try:
-                _logged_unavailable = False   # reset on successful connect
                 await self._cdp_session()
-            except Exception as exc:
-                if not _logged_unavailable:
-                    _add_log(f"{DIM}[CDP]{RST} Chrome debug port unavailable — upload detection disabled")
-                    _logged_unavailable = True
-            await asyncio.sleep(60)   # retry every 60 s, not 10 s
+                _warned = False   # reset if we ever successfully connect
+            except Exception:
+                if not _warned:
+                    _add_log(f"{DIM}[CDP]{RST} Upload detection disabled "
+                             f"(start Chrome with --remote-debugging-port=9222 to enable)")
+                    _warned = True
+            await asyncio.sleep(60)
 
     async def _cdp_session(self):
         import urllib.request
@@ -1042,7 +1771,7 @@ class BrowserIntelligenceMonitor:
         url    = req.get("url", "")
         domain = urlparse(url).netloc.lower().lstrip("www.")
         fname  = _parse_upload_filename(req.get("postData", ""))
-        payload = _base(self._cfg, "browser_intel")
+        payload = _base(self._cfg, "web_proxy")
         payload.update({
             "activity_type": "file_upload",
             "file_name":     fname,
@@ -1054,6 +1783,131 @@ class BrowserIntelligenceMonitor:
         _stats["alerts"] += 1
         _add_log(f"{R}[UPLOAD]{RST} {fname or '(unknown)'} → {domain}"
                  + (" [INCOGNITO]" if self._incognito_active else ""))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Outlook email monitoring (COM event hook)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class OutlookMonitor:
+    """
+    Hooks into Microsoft Outlook via COM and fires an email event to
+    InsightGuard every time the user sends an email.
+
+    Uses company_domain from config.json to decide internal vs external:
+      - recipient @same domain  → external: False  (normal)
+      - recipient @other domain → external: True   (suspicious/critical)
+
+    Fails silently if Outlook is not installed or not running.
+    """
+
+    def __init__(self, cfg: dict):
+        self._cfg            = cfg
+        self._company_domain = cfg.get("company_domain", "").lower().strip()
+        self._thread         = threading.Thread(
+            target=self._run, daemon=True, name="outlook-monitor"
+        )
+
+    def start(self):
+        self._thread.start()
+
+    def _run(self):
+        if platform.system() != "Windows":
+            _add_log(f"{DIM}[OUTLOOK]{RST} Not Windows — email monitoring skipped")
+            return
+
+        try:
+            import pythoncom
+            import win32com.client
+        except ImportError:
+            _add_log(f"{Y}[OUTLOOK]{RST} pywin32 not available — email monitoring disabled")
+            return
+
+        try:
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
+
+        try:
+            outlook = win32com.client.Dispatch("Outlook.Application")
+        except Exception as e:
+            _add_log(f"{Y}[OUTLOOK]{RST} Outlook not running or not installed — {e}")
+            return
+
+        cfg            = self._cfg
+        company_domain = self._company_domain
+
+        class _OutlookEvents:
+            def OnItemSend(self, item, cancel):
+                try:
+                    if item.Class != 43:   # 43 = olMailItem
+                        return
+
+                    recipient_count = item.Recipients.Count
+
+                    # Sum all attachment sizes
+                    attachment_mb = 0.0
+                    for i in range(1, item.Attachments.Count + 1):
+                        try:
+                            attachment_mb += item.Attachments.Item(i).Size / 1_048_576
+                        except Exception:
+                            pass
+
+                    # Check if any recipient is outside the company domain
+                    external = False
+                    if company_domain:
+                        for i in range(1, recipient_count + 1):
+                            try:
+                                recip = item.Recipients.Item(i)
+                                addr  = ""
+                                try:
+                                    addr = recip.Address.lower()
+                                except Exception:
+                                    pass
+                                # Exchange GAL addresses start with /o= — resolve to SMTP
+                                if not addr or addr.startswith("/o="):
+                                    try:
+                                        addr = recip.AddressEntry \
+                                                    .GetExchangeUser() \
+                                                    .PrimarySmtpAddress.lower()
+                                    except Exception:
+                                        pass
+                                if addr and "@" in addr:
+                                    if addr.split("@")[1] != company_domain:
+                                        external = True
+                                        break
+                            except Exception:
+                                pass
+
+                    payload = _base(cfg, "mail_gateway")
+                    payload.update({
+                        "source":          "email",
+                        "direction":       "sent",
+                        "recipient_count": recipient_count,
+                        "attachment_mb":   round(attachment_mb, 2),
+                        "external":        external,
+                    })
+                    enqueue_event(payload)
+
+                    if external:
+                        _add_log(f"{R}[EMAIL — EXTERNAL]{RST} "
+                                 f"{recipient_count} recipient(s), "
+                                 f"{attachment_mb:.1f} MB attachment")
+                    else:
+                        _add_log(f"{C}[EMAIL — INTERNAL]{RST} "
+                                 f"{recipient_count} recipient(s), "
+                                 f"{attachment_mb:.1f} MB attachment")
+
+                except Exception as e:
+                    _add_log(f"{Y}[OUTLOOK]{RST} Handler error: {e}")
+
+        try:
+            win32com.client.WithEvents(outlook, _OutlookEvents)
+            _add_log(f"{G}[OUTLOOK MONITOR]{RST} Connected to Outlook — monitoring sent emails")
+            import pythoncom as _pc
+            _pc.PumpMessages()   # blocks this thread, receives COM events
+        except Exception as e:
+            _add_log(f"{Y}[OUTLOOK]{RST} Event hook failed: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1119,11 +1973,20 @@ def main():
     # Start file monitor
     observer = start_file_monitor(cfg)
 
+    # Start archive poll monitor (catches zips created anywhere in the user profile,
+    # not just in the three watchdog-monitored folders)
+    archive_poll = ArchivePollMonitor(cfg)
+    archive_poll.start()
+
     # Start USB monitor
     usb_mon = USBMonitor(cfg)
     usb_mon.start()
 
-    # Start browser monitor
+    # Start DNS monitor (catches ALL browser visits without touching browser files)
+    dns_mon = DnsMonitor(cfg)
+    dns_mon.start()
+
+    # Start browser history monitor (Chrome/Edge/Firefox SQLite polling)
     browser_mon = BrowserMonitor(cfg)
     browser_mon.start()
 
@@ -1138,6 +2001,10 @@ def main():
     # Start clipboard monitor
     clip_mon = ClipboardMonitor(cfg, enqueue_event, _add_log)
     clip_mon.start()
+
+    # Start Outlook email monitor (COM event hook — fires on every sent email)
+    outlook_mon = OutlookMonitor(cfg)
+    outlook_mon.start()
 
     # Status bar thread
     status_thread = threading.Thread(target=_status_bar, args=(cfg,), daemon=True, name="status-bar")

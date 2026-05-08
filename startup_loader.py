@@ -16,20 +16,17 @@ events that demonstrate all system features:
 This runs ONCE at startup if the database has fewer than 100 events.
 """
 
-import sys, os, random, uuid
+import sys, os, random
 sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from data_acquisition.collector    import AcquisitionRouter
 from data_processing.etl_pipeline  import ETLPipeline
 from feature_engineering.extractor import FeatureEngineering
 from ai_analytics.anomaly_model    import AnomalyDetectionModel
 from storage.database              import DatabaseManager
-from per_user_baseline             import get_store as get_pub_store
-from psychometric_scorer           import get_store as get_psych_store
 
 # ── Synthetic users ────────────────────────────────────────────────────────
 
@@ -215,7 +212,7 @@ def generate_synthetic_data(n_events_per_user: int = 30) -> dict:
             if (i+1) % 200 == 0:
                 print(f"  [{round((i+1)/len(all_events)*100):>3}%] {i+1}/{len(all_events)} events processed")
 
-        except Exception as e:
+        except Exception:
             stats["errors"] += 1
             continue
 
@@ -281,20 +278,150 @@ def should_auto_load(db: DatabaseManager, min_events: int = 100) -> bool:
         return True
 
 
+def seed_nexon_baselines() -> int:
+    """
+    Generate enough normal-behaviour events for every Nexon employee so
+    that their personal Isolation Forest (PUB) can be trained immediately.
+    Each employee needs at least 10 events; we generate 20 to be safe.
+    Only seeds employees that have fewer than 10 events already.
+    Returns number of employees seeded.
+    """
+    try:
+        from nexon_psychometrics import NEXON_OCEAN_PROFILES
+    except ImportError:
+        print("[Startup] nexon_psychometrics not found — skipping Nexon baseline seed.")
+        return 0
+
+    router   = AcquisitionRouter()
+    pipeline = ETLPipeline()
+    fe       = FeatureEngineering()
+    db       = DatabaseManager()
+
+    import sqlite3 as _sq
+    conn = _sq.connect(str(db.db_path)); conn.row_factory = _sq.Row
+    existing_counts = {
+        row["user_id"]: row["cnt"]
+        for row in conn.execute(
+            "SELECT user_id, COUNT(*) as cnt FROM activity_logs GROUP BY user_id"
+        ).fetchall()
+    }
+    conn.close()
+
+    seeded = 0
+    for p in NEXON_OCEAN_PROFILES:
+        uid  = p["user_id"]
+        # Derive dept/role from user_id (match against company list)
+        dept, role = _nexon_dept_role(uid)
+        db.upsert_user(uid, dept, role)
+
+        existing = existing_counts.get(uid, 0)
+        if existing >= 10:
+            continue  # already has enough data
+
+        needed = max(0, 20 - existing)
+        for _ in range(needed):
+            raw = _normal_login(uid)
+            raw["department"] = dept
+            raw["role"]       = role
+            try:
+                activity = router.route(raw)
+                log      = pipeline.process(activity)
+                if not log.is_valid:
+                    continue
+                fv = fe.extractFeatures(log)
+                db.insert_activity_log(log.log_id, uid, log.timestamp.isoformat(),
+                                       log.activity_type, log.source, details=fv.to_dict())
+                db.insert_features("ft_"+log.log_id, uid, log.log_id, fv.to_dict())
+            except Exception:
+                continue
+
+        seeded += 1
+
+    # Now train PUB for all newly seeded Nexon employees
+    _pretrain_pub_from_db(db)
+    print(f"[Startup] Nexon baselines seeded for {seeded} employees.")
+    return seeded
+
+
+def _nexon_dept_role(uid: str) -> tuple:
+    """Return (dept, role) for a Nexon employee user_id."""
+    _MAP = {
+        "alex.morgan":("Engineering","Software Engineer"),
+        "sam.patel":("Engineering","Senior Developer"),
+        "jordan.lee":("Engineering","Full Stack Developer"),
+        "casey.kim":("Engineering","DevOps Engineer"),
+        "riley.chen":("Engineering","Backend Developer"),
+        "drew.johnson":("Engineering","Frontend Developer"),
+        "taylor.wong":("Engineering","Software Engineer"),
+        "morgan.davis":("Engineering","Lead Developer"),
+        "quinn.harris":("Engineering","DevOps Engineer"),
+        "avery.martin":("Engineering","Junior Developer"),
+        "james.carter":("Finance","Financial Analyst"),
+        "sarah.chen":("Finance","Senior Analyst"),
+        "michael.torres":("Finance","Accountant"),
+        "lisa.nguyen":("Finance","Finance Manager"),
+        "david.kim":("Finance","Budget Analyst"),
+        "emma.wilson":("Finance","Controller"),
+        "ryan.patel":("Finance","Financial Director"),
+        "olivia.brown":("Finance","Payroll Specialist"),
+        "jessica.moore":("HR","HR Manager"),
+        "daniel.taylor":("HR","Recruiter"),
+        "sophia.jackson":("HR","HR Specialist"),
+        "ethan.white":("HR","People Operations"),
+        "ava.martinez":("HR","Benefits Admin"),
+        "noah.thompson":("HR","Training Manager"),
+        "liam.anderson":("IT","SysAdmin"),
+        "mia.thomas":("IT","Network Engineer"),
+        "jacob.garcia":("IT","Security Analyst"),
+        "isabella.robinson":("IT","IT Support"),
+        "mason.clark":("IT","Infrastructure Engineer"),
+        "charlotte.lewis":("IT","Cloud Engineer"),
+        "aiden.lee":("Sales","Account Executive"),
+        "emily.walker":("Sales","Sales Manager"),
+        "lucas.hall":("Sales","Regional Sales Rep"),
+        "amelia.allen":("Sales","Sales Representative"),
+        "oliver.young":("Sales","Business Development"),
+        "harper.hernandez":("Sales","Sales Director"),
+        "elijah.king":("Sales","Account Manager"),
+        "abigail.wright":("Sales","Sales Representative"),
+        "james.lopez":("Sales","Enterprise Sales"),
+        "sophia.hill":("Marketing","Marketing Manager"),
+        "william.scott":("Marketing","Content Strategist"),
+        "mia.green":("Marketing","SEO Specialist"),
+        "jackson.adams":("Marketing","Brand Manager"),
+        "scarlett.baker":("Marketing","Social Media Manager"),
+        "henry.nelson":("Marketing","Marketing Analyst"),
+        "victoria.carter":("Legal","Legal Counsel"),
+        "sebastian.mitchell":("Legal","Contract Specialist"),
+        "grace.perez":("Legal","Compliance Officer"),
+        "joseph.roberts":("Legal","Paralegal"),
+        "robert.anderson":("Executive","Chief Executive Officer"),
+        "jennifer.williams":("Executive","Chief Financial Officer"),
+        "michael.johnson":("Executive","Chief Technology Officer"),
+        "luna.turner":("Operations","Operations Manager"),
+        "eli.phillips":("Operations","Project Manager"),
+        "nora.campbell":("Operations","Operations Analyst"),
+    }
+    return _MAP.get(uid, ("General", "Employee"))
+
+
 def run_startup_loader():
     """
     Called automatically at app startup.
-    Only generates data if the database is empty or nearly empty.
+    1. If DB is empty, generate synthetic CERT-like demo data.
+    2. Always seed Nexon employee PUB baselines (if not yet trained).
     """
     db = DatabaseManager()
-    if not should_auto_load(db):
+    if should_auto_load(db):
+        print("[Startup] Database is empty — generating synthetic demo data...")
+        generate_synthetic_data(n_events_per_user=30)
+        print("[Startup] Demo data ready.")
+    else:
         count = db.get_stats().get("total_events", 0)
-        print(f"[Startup] Database has {count} events — skipping auto-load.")
-        return
+        print(f"[Startup] Database has {count} events.")
 
-    print("[Startup] Database is empty — generating synthetic demo data...")
-    generate_synthetic_data(n_events_per_user=30)
-    print("[Startup] Demo data ready. Dashboard will show events immediately.")
+    # Always ensure Nexon employees have PUB baselines
+    seed_nexon_baselines()
 
 
 # ── Entry point ────────────────────────────────────────────────────────────

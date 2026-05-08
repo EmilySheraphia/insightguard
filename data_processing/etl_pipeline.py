@@ -111,7 +111,7 @@ class ETLPipeline:
             "login", "logoff", "file_access", "email", "usb", "web",
             "process_launch", "process_kill", "log_clear",
             "incognito_detected", "webmail_activity", "file_upload",
-            "correlation_alert",
+            "correlation_alert", "clipboard",
         }:
             return False
         return True
@@ -193,8 +193,14 @@ class ETLPipeline:
         elif raw.activity_type == "web":
             cat = str(d.get("category", "")).lower()
             _risky_cats = {"tor", "cloud_storage", "file_sharing"}
-            p.risky_web = self._safe_bool(d.get("risky", False)) or cat in _risky_cats
+            p.risky_web = (self._safe_bool(d.get("risky", False))
+                           or self._safe_bool(d.get("blocked", False))
+                           or cat in _risky_cats)
             p.data_mb   = self._safe_float(d.get("bytes_out", 0)) / 1_048_576
+
+        elif raw.activity_type == "clipboard":
+            # Treat char_count as a proxy for data volume (chars → rough KB)
+            p.data_mb = self._safe_float(d.get("char_count", 0)) / 1000.0
 
     # ------ Main transform -------------------------------------------------
 
@@ -240,9 +246,11 @@ def enrich_raw(raw: dict) -> None:
     """
     src = raw.get("source", "")
 
-    # is_archive: file-source event whose file_path ends in an archive extension
-    is_archive = False
-    if src in _FILE_SOURCES:
+    # is_archive: prefer agent-supplied value; fall back to extension check.
+    # The agent already computed is_archive from the destination filename on Windows,
+    # which is correct even for rename events (tmp → .zip) where file_path is the source.
+    is_archive = bool(raw.get("is_archive", False))
+    if not is_archive and src in _FILE_SOURCES:
         fp  = raw.get("file_path", raw.get("file_name", ""))
         ext = os.path.splitext(fp)[1].lower() if fp else ""
         is_archive = ext in _ARCHIVE_EXTS or raw.get("operation", "") == "compress"

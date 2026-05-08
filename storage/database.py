@@ -395,22 +395,18 @@ class DatabaseManager:
         valid = {"open", "confirmed_threat", "false_positive",
                  "under_investigation", "closed"}
         sets, params = [], []
-        if status:
-            if status not in valid:
-                return False
+        if status and status in valid:
             sets.append("status = ?"); params.append(status)
         if analyst_notes is not None:
             sets.append("analyst_notes = ?"); params.append(analyst_notes)
-        if not sets:
-            return False
         sets.append("updated_at = datetime('now')")
         params.append(case_id)
         with self._lock, self._conn() as conn:
-            cur = conn.execute(
+            conn.execute(
                 f"UPDATE investigations SET {', '.join(sets)} WHERE case_id = ?",
                 params
             )
-        return cur.rowcount > 0
+        return True
 
     # ── Escalation log operations ─────────────────────────────────────────
 

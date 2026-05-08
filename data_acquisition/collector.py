@@ -199,6 +199,7 @@ class WebCollector(BaseCollector):
 
     def collect(self, raw: dict) -> RawActivityLog:
         category = raw.get("category", "general")
+        blocked  = bool(raw.get("blocked", False))
         return RawActivityLog(
             user_id       = str(raw["user_id"]),
             timestamp     = self._ts(raw),
@@ -208,8 +209,8 @@ class WebCollector(BaseCollector):
                 "url":       raw.get("url", ""),
                 "category":  category,
                 "bytes_out": int(raw.get("bytes_out", 0)),
-                "blocked":   bool(raw.get("blocked", False)),
-                "risky":     category in self.RISKY_CATEGORIES,
+                "blocked":   blocked,
+                "risky":     blocked or category in self.RISKY_CATEGORIES,
             },
         )
 

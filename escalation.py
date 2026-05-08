@@ -14,6 +14,7 @@ import threading
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from html import escape
 from pathlib import Path
 
@@ -124,9 +125,13 @@ class EscalationEngine:
         return self._send_email(payload)
 
     def _drain_loop(self) -> None:
+        import time as _time
         while True:
             try:
                 payload = self._queue.get(timeout=5)
+                # Wait 5 s so the agent has time to upload the screenshot
+                # before we send the email (otherwise screenshot is missing).
+                _time.sleep(5)
                 result  = self._send_email(payload)
                 self._log_escalation(payload, result["status"], result.get("error", ""))
             except queue.Empty:
@@ -186,15 +191,33 @@ class EscalationEngine:
           </div>
         </div>
         """
+        # Collect screenshot attachments linked to this event
+        screenshot_data: list[bytes] = []
+        log_id = payload.get("log_id", "")
+        if log_id and self._db:
+            try:
+                evidence_rows = self._db.get_evidence_by_event(log_id)
+                for row in evidence_rows[:3]:   # attach up to 3 screenshots
+                    fpath = Path(row["file_path"])
+                    if fpath.exists():
+                        screenshot_data.append(fpath.read_bytes())
+            except Exception as e:
+                print(f"[Escalation] Evidence fetch error: {e}")
+
         try:
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(cfg["smtp_host"], int(cfg["smtp_port"]), context=ctx) as server:
                 server.login(cfg["smtp_user"], cfg["smtp_password"])
-                msg = MIMEMultipart("alternative")
+                msg = MIMEMultipart("mixed")
                 msg["Subject"] = subject
                 msg["From"]    = cfg["smtp_user"]
                 msg["To"]      = cfg["recipient_email"]
                 msg.attach(MIMEText(body_html, "html"))
+                for i, img_bytes in enumerate(screenshot_data):
+                    img_part = MIMEImage(img_bytes, _subtype="jpeg")
+                    img_part.add_header("Content-Disposition", "attachment",
+                                        filename=f"screenshot_{i+1}.jpg")
+                    msg.attach(img_part)
                 server.sendmail(cfg["smtp_user"], cfg["recipient_email"], msg.as_string())
             print(f"[Escalation] Email sent → {cfg['recipient_email']} for {payload.get('user_id')}")
             return {"status": "sent", "error": ""}

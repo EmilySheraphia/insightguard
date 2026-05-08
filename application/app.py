@@ -12,7 +12,7 @@ Final score pipeline:
 
 from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from datetime import datetime, timezone
-import json, queue, re, threading, random, time, uuid
+import json, queue, re, threading, uuid
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -151,57 +151,6 @@ profile_lock = threading.Lock()
 sse_queues:   list  = []
 sse_lock = threading.Lock()
 
-_SIM_USERS = [
-    {"id":"jsmith",  "dept":"Finance",     "role":"Analyst"},
-    {"id":"alopez",  "dept":"Engineering", "role":"Developer"},
-    {"id":"mkumar",  "dept":"HR",          "role":"Manager"},
-    {"id":"twang",   "dept":"IT",          "role":"SysAdmin"},
-    {"id":"rbrown",  "dept":"Legal",       "role":"Counsel"},
-    {"id":"hnguyen", "dept":"Finance",     "role":"Director"},
-]
-
-def _normal_fv():
-    return {"hour":random.randint(9,16),"day_of_week":random.randint(0,4),
-            "is_off_hours":0,"is_weekend":0,"event_type_code":random.choice([0,2,3,5]),
-            "failed_attempts":0,"vpn":0,"tor":0,"new_device":0,
-            "is_risky_country":0,"is_unknown_country":0,
-            "file_count":random.randint(1,15),"data_mb":round(random.uniform(0.1,30),2),
-            "usb_transfer":0,"usb_data_mb":0.0,"recipient_count":random.randint(1,4),
-            "attachment_mb":round(random.uniform(0,2),2),"external_email":0,"risky_web":0}
-
-def _suspicious_fv():
-    return {"hour":random.choice([7,19,20,21]),"day_of_week":random.randint(0,4),
-            "is_off_hours":1,"is_weekend":0,"event_type_code":0,
-            "failed_attempts":random.randint(1,2),"vpn":1,"tor":0,
-            "new_device":random.randint(0,1),"is_risky_country":0,"is_unknown_country":1,
-            "file_count":random.randint(5,40),"data_mb":round(random.uniform(10,200),2),
-            "usb_transfer":0,"usb_data_mb":0.0,"recipient_count":random.randint(1,8),
-            "attachment_mb":round(random.uniform(0,10),2),
-            "external_email":random.randint(0,1),"risky_web":random.randint(0,1)}
-
-def _high_risk_fv():
-    return {"hour":random.choice([1,2,3,23]),"day_of_week":random.randint(0,4),
-            "is_off_hours":1,"is_weekend":0,"event_type_code":random.choice([2,4]),
-            "failed_attempts":random.randint(3,5),"vpn":1,"tor":0,"new_device":1,
-            "is_risky_country":0,"is_unknown_country":1,
-            "file_count":random.randint(60,200),"data_mb":round(random.uniform(600,2000),2),
-            "usb_transfer":1,"usb_data_mb":round(random.uniform(200,800),2),
-            "recipient_count":random.randint(10,20),"attachment_mb":round(random.uniform(30,80),2),
-            "external_email":1,"risky_web":1}
-
-def _critical_fv():
-    return {"hour":random.choice([1,2,3]),"day_of_week":random.randint(0,4),
-            "is_off_hours":1,"is_weekend":0,"event_type_code":0,
-            "failed_attempts":random.randint(5,10),"vpn":1,"tor":1,"new_device":1,
-            "is_risky_country":1,"is_unknown_country":0,
-            "file_count":random.randint(300,600),"data_mb":round(random.uniform(3000,6000),2),
-            "usb_transfer":1,"usb_data_mb":round(random.uniform(1000,2000),2),
-            "recipient_count":random.randint(20,50),"attachment_mb":round(random.uniform(80,200),2),
-            "external_email":1,"risky_web":1}
-
-_EVENT_NAMES = {0:"login",1:"logoff",2:"file_access",3:"email",4:"usb",5:"web"}
-
-
 def _full_score(fv_dict: dict, user_id: str, feature_array=None, role: str = "", raw_event: dict = None) -> dict:
     fv = FeatureVector(**{k: fv_dict.get(k,0) for k in FeatureVector.COLUMNS})
     from ai_analytics.anomaly_model import UEBAEngine
@@ -238,66 +187,39 @@ def _full_score(fv_dict: dict, user_id: str, feature_array=None, role: str = "",
     }
 
 
-def _sim(level):
-    user = random.choice(_SIM_USERS)
-    r    = random.random()
-    fv_dict = (
-        _normal_fv()     if level=="normal"     else
-        _suspicious_fv() if level=="suspicious" else
-        _high_risk_fv()  if level=="high"       else
-        _critical_fv()   if level=="critical"   else
-        _normal_fv()     if r<0.55 else
-        _suspicious_fv() if r<0.75 else
-        _high_risk_fv()  if r<0.90 else _critical_fv()
-    )
-    # Use real time for timestamp/storage; keep simulated hour in feature vector
-    # so IF/LOF score against the scenario's intended time pattern
-    _now = datetime.now(timezone.utc).replace(tzinfo=None)
-    _wh = _role_config.get("working_hours", {"start": 8, "end": 18})
-    fv_dict["is_off_hours"] = int(not (_wh.get("start", 8) <= fv_dict["hour"] < _wh.get("end", 18)))
-    result = _full_score(fv_dict, user["id"])
-    atype  = _EVENT_NAMES.get(fv_dict["event_type_code"],"login")
-    uid    = user["id"]
-    lid = str(uuid.uuid4())[:12]
-    db.upsert_user(uid, user["dept"], user["role"])
-    db.insert_activity_log(lid, uid, _now.isoformat()+"Z", atype, "simulator", details=fv_dict)
-    db.insert_features("ft_"+lid, uid, lid, fv_dict)
-    did = "dt_"+lid
-    db.insert_anomaly_result(did, uid, lid, result)
-    _upd(uid, result, user)
-    aid = None
-    if result["is_anomaly"]:
-        aid = "al_"+lid[:10]
-        db.insert_alert(aid, uid, did, result["severity"], atype,
-                        "Rules: "+", ".join(result["triggered_rules"][:3]) if result["triggered_rules"] else "Anomaly")
-    pay = {
-        "alert_id":aid,"user_id":uid,"department":user["dept"],"activity_type":atype,
-        "ml_score":result["ml_score"],"personal_risk_score":result["personal_risk_score"],
-        "pub_combined":result["pub_combined"],"pub_is_trained":result["pub_is_trained"],
-        "pub_events_seen":result["pub_events_seen"],"pub_status":result["pub_status"],
-        "psychometric_risk":result["psychometric_risk"],"pers_enhancement":result["pers_enhancement"],
-        "risk_score":result["risk_score"],"severity":result["severity"],
-        "ueba_score":result["ueba_score"],"if_score":result["if_score"],"lof_score":result["lof_score"],
-        "triggered_rules":result["triggered_rules"],"timestamp":_now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "data_mb":fv_dict["data_mb"],"file_count":fv_dict["file_count"],"tor":bool(fv_dict["tor"]),
-        "log_id":lid,
-    }
-    _broadcast_sse(pay)
-    return {**pay,"is_anomaly":result["is_anomaly"]}
-
-
 def _process_event(raw):
     activity = router.route(raw)
     log      = pipeline.process(activity)
     if not log.is_valid: return {"error":"Unprocessable event"}
     enrich_raw(raw)
+    # Debug log so you can see in server console what's being detected
+    atype = log.activity_type
+    print(f"[EVENT] {atype} user={raw.get('user_id','?')} source={raw.get('source','?')}", end="")
+    if atype == "web":
+        print(f" url={raw.get('url','?')} blocked={raw.get('blocked',False)}", end="")
+    elif atype in ("file_access",):
+        print(f" file={raw.get('file_name',raw.get('file_path','?'))}", end="")
+    print()
+    _fn_check = (raw.get("file_name","") or raw.get("file_path","")).lower()
+    _archive_exts = {".zip",".rar",".7z",".tar",".gz",".bz2"}
+    if any(_fn_check.endswith(ext) for ext in _archive_exts) or raw.get("is_archive"):
+        print(f"[ARCHIVE SERVER] user={raw.get('user_id')} file={raw.get('file_name',raw.get('file_path','?'))} "
+              f"is_archive={raw.get('is_archive')} op={raw.get('operation','?')}")
     raw["is_off_hours"] = int(log.is_off_hours)
     fv      = fe_eng.extractFeatures(log)
     uid     = log.user_id
     result  = _full_score(fv.to_dict(), uid, fv.to_array(), role=raw.get("role",""), raw_event=raw)
     db.upsert_user(uid, raw.get("department",""), raw.get("role",""), raw.get("name",""))
+    # Merge raw event fields into stored details so historical queries can show
+    # file names, rename/move paths, URLs, operation types, and USB file lists.
+    _raw_extras = {k: raw.get(k, "") for k in
+                   ("file_path", "file_name", "operation", "destination",
+                    "url", "category", "site_name", "page_title")}
+    stored_details = {**fv.to_dict(), **{k: v for k, v in _raw_extras.items() if v}}
+    if raw.get("files"):
+        stored_details["files"] = raw["files"]
     db.insert_activity_log(log.log_id, uid, log.timestamp.isoformat(),
-                           log.activity_type, log.source, details=fv.to_dict())
+                           log.activity_type, log.source, details=stored_details)
     db.insert_features("ft_"+log.log_id, uid, log.log_id, fv.to_dict())
     did = "dt_"+log.log_id
     # Allow agent to force a minimum severity for composite threat events
@@ -321,16 +243,41 @@ def _process_event(raw):
         result["is_anomaly"] = True
         final_sev = result["severity"]
 
-    # Archive floor — zipping files is always at least high_risk (score floor 65)
-    if raw.get("is_archive"):
-        floor = 85 if raw.get("sensitive") else 65
+    # Web floor — explicitly blocked sites → critical; risky category → high_risk
+    if log.activity_type == "web" and log.risky_web:
+        floor = 85 if raw.get("blocked") else 60
+        sev   = "critical" if raw.get("blocked") else "high_risk"
         if result["risk_score"] < floor:
             result["risk_score"] = floor
-            result["severity"] = "critical" if floor >= 80 else "high_risk"
+            result["severity"]   = sev
             result["is_anomaly"] = True
-            final_sev = result["severity"]
+            final_sev = sev
+            if "risky_web" not in result.get("triggered_rules", []):
+                result["triggered_rules"] = list(result.get("triggered_rules", [])) + ["risky_web"]
+
+    # Archive floor — zipping/compressing files is always critical
+    if raw.get("is_archive"):
+        floor = 85
+        if result["risk_score"] < floor:
+            result["risk_score"] = floor
+            result["severity"] = "critical"
+            result["is_anomaly"] = True
+            final_sev = "critical"
             if "archive_created" not in result.get("triggered_rules", []):
                 result["triggered_rules"] = list(result.get("triggered_rules", [])) + ["archive_created"]
+
+    # USB floor — inserting a USB device or copying files to it is always critical
+    if raw.get("usb_transfer"):
+        op = raw.get("operation", "")
+        floor = 90 if op == "file_transfer" and raw.get("sensitive") else 82
+        if result["risk_score"] < floor:
+            result["risk_score"] = floor
+            result["severity"] = "critical"
+            result["is_anomaly"] = True
+            final_sev = "critical"
+            rule = "usb_exfil" if op == "file_transfer" else "usb_insert"
+            if rule not in result.get("triggered_rules", []):
+                result["triggered_rules"] = list(result.get("triggered_rules", [])) + [rule]
 
     # Store final scores (post-boost) to DB
     db.insert_anomaly_result(did, uid, log.log_id, result)
@@ -344,7 +291,20 @@ def _process_event(raw):
     file_name = raw.get("file_name","") or raw.get("file_path","")
     if "/" in file_name or "\\" in file_name:
         file_name = file_name.split("/")[-1].split("\\")[-1]
+    op = raw.get("operation","")
+    if op in ("rename","move"):
+        dest_path = raw.get("destination","") or raw.get("dest_path","")
+        if dest_path:
+            dest_name = dest_path.split("/")[-1].split("\\")[-1]
+            file_name = f"{file_name} → {dest_name}"
 
+    # Build a clean display label for web events
+    site_name = raw.get("site_name","") or raw.get("url","")
+    if site_name and "://" in site_name:
+        from urllib.parse import urlparse as _up
+        site_name = _up(site_name).netloc or site_name
+    category  = raw.get("category","")
+    blocked   = bool(raw.get("blocked", False))
     pay = {
         "alert_id":aid,"user_id":uid,"department":raw.get("department",""),
         "activity_type":log.activity_type,
@@ -357,6 +317,10 @@ def _process_event(raw):
         "triggered_rules":result["triggered_rules"],"timestamp":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data_mb":fv.data_mb,"file_count":fv.file_count,"tor":bool(fv.tor),
         "file_name":file_name,
+        "site_name":site_name,
+        "url":raw.get("url",""),
+        "category":category,
+        "blocked":blocked,
         "files":raw.get("files",[]),
         "threat_type":raw.get("threat_type",""),
         "description":raw.get("description",""),
@@ -393,12 +357,9 @@ def _upd(uid, result, raw):
 def _broadcast_sse(payload):
     msg = f"data: {json.dumps(payload)}\n\n"
     with sse_lock:
-        dead = [q for q in sse_queues if not _try_put(q,msg)]
-        for q in dead: sse_queues.remove(q)
-
-def _try_put(q, msg):
-    try: q.put_nowait(msg); return True
-    except queue.Full: return False
+        for q in list(sse_queues):
+            try: q.put_nowait(msg)
+            except queue.Full: pass   # drop event for slow client, keep them connected
 
 
 @app.get("/api/config")
@@ -413,172 +374,6 @@ def update_config():
     _role_config = body
     _save_role_config()
     return jsonify({"message":"Config saved","roles":len(_role_config.get("roles",{}))}), 200
-
-@app.get("/company")
-def serve_company():
-    import os as _os
-    from flask import Response as _Resp
-    base = _os.path.dirname(_os.path.abspath(__file__))
-    paths = [
-        _os.path.join(base, "company_app.html"),
-        _os.path.join(_os.getcwd(), "application", "company_app.html"),
-    ]
-    for p in paths:
-        if _os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return _Resp(f.read(), mimetype="text/html")
-    return _Resp("<h1>Company portal not found</h1>", mimetype="text/html")
-
-# ── File download content generators ─────────────────────────────────────────
-
-_FILE_CONTENT = {
-    "Salary_Data_2025.xlsx": lambda dept: (
-        "employee_id,name,department,base_salary,bonus,total_comp\n" +
-        "\n".join(f"EMP{1000+i},{n},{dept},£{55000+i*2500:,},£{8000+i*500:,},£{63000+i*3000:,}"
-                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
-                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
-                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson",
-                                          "Maria White","Nathan Harris","Olivia Martin","Paul Thompson",
-                                          "Quinn Garcia","Rachel Martinez","Steve Robinson","Tina Clark"]))
-    ),
-    "admin_passwords.txt": lambda dept: (
-        "# NEXON TECHNOLOGIES — IT ADMIN CREDENTIALS\n"
-        "# CONFIDENTIAL — DO NOT DISTRIBUTE\n\n"
-        "[Database Servers]\n"
-        "prod-db-01.nexon.internal  admin  Nx!Pr0d@2025\n"
-        "prod-db-02.nexon.internal  admin  Nx!Pr0d@2025\n"
-        "staging-db.nexon.internal  admin  Nx!Stg@2025\n\n"
-        "[Active Directory]\n"
-        "ad.nexon.internal          administrator  N3x0n@AD!2025\n\n"
-        "[Cloud Console]\n"
-        "AWS Account ID: 123456789012\n"
-        "Root: admin@nexon.com  / N3x0nCl0ud!2025\n\n"
-        "[VPN Gateway]\n"
-        "vpn.nexon.internal  vpnadmin  VPN!Nx2025@sec\n"
-    ),
-    "prod_server_list.csv": lambda dept: (
-        "hostname,ip,role,os,owner,last_patch\n"
-        "prod-app-01,10.0.1.10,Application Server,Ubuntu 22.04,Engineering,2025-03-15\n"
-        "prod-app-02,10.0.1.11,Application Server,Ubuntu 22.04,Engineering,2025-03-15\n"
-        "prod-db-01,10.0.2.10,Primary Database,RHEL 9,DBA Team,2025-02-28\n"
-        "prod-db-02,10.0.2.11,Replica Database,RHEL 9,DBA Team,2025-02-28\n"
-        "prod-lb-01,10.0.0.5,Load Balancer,nginx/Ubuntu,Engineering,2025-03-01\n"
-        "prod-cache-01,10.0.3.10,Redis Cache,Ubuntu 22.04,Engineering,2025-03-10\n"
-        "backup-01,10.0.5.10,Backup Server,Ubuntu 22.04,IT Ops,2025-01-20\n"
-        "monitoring-01,10.0.6.10,Monitoring,Ubuntu 22.04,IT Ops,2025-03-01\n"
-    ),
-    "db_credentials.txt": lambda dept: (
-        "# Application Database Credentials\n"
-        "# Environment: Production\n\n"
-        "DB_HOST=prod-db-01.nexon.internal\n"
-        "DB_PORT=5432\n"
-        "DB_NAME=nexon_production\n"
-        "DB_USER=app_service\n"
-        "DB_PASSWORD=AppSvc!Nx2025@prod\n\n"
-        "# Read replica\n"
-        "DB_REPLICA_HOST=prod-db-02.nexon.internal\n"
-        "DB_REPLICA_USER=app_service_ro\n"
-        "DB_REPLICA_PASSWORD=R0Service!Nx2025\n"
-    ),
-    "deployment_config.yaml": lambda dept: (
-        "# Nexon Platform Deployment Configuration\n"
-        "# DO NOT COMMIT WITH SECRETS\n\n"
-        "environment: production\n"
-        "region: eu-west-1\n\n"
-        "database:\n"
-        "  host: prod-db-01.nexon.internal\n"
-        "  port: 5432\n"
-        "  name: nexon_production\n"
-        "  ssl: true\n\n"
-        "cache:\n"
-        "  host: prod-cache-01.nexon.internal\n"
-        "  port: 6379\n\n"
-        "services:\n"
-        "  api: { replicas: 3, port: 8080 }\n"
-        "  worker: { replicas: 2 }\n"
-        "  scheduler: { replicas: 1 }\n"
-    ),
-    "All_Employees_Personal.xlsx": lambda dept: (
-        "employee_id,full_name,dob,address,ni_number,bank_sort,bank_account,emergency_contact\n" +
-        "\n".join(f"EMP{1000+i},{n},19{70+i%30}-{(i%12)+1:02d}-{(i%28)+1:02d},"
-                  f"{i+1} High Street London,AB{100000+i}C,{20+i%80:02d}-{10+i%40:02d}-{30+i%70:02d},"
-                  f"{10000000+i*13},{n.split()[0]} {n.split()[-1]} (Parent)"
-                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
-                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
-                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson",
-                                          "Maria White","Nathan Harris","Olivia Martin","Paul Thompson",
-                                          "Quinn Garcia","Rachel Martinez","Steve Robinson","Tina Clark",
-                                          "Uma Patel","Victor Chen","Wendy Kim","Xavier Lee","Yara Singh"]))
-    ),
-    "firewall_rules.csv": lambda dept: (
-        "rule_id,action,protocol,src_ip,dst_ip,dst_port,description\n"
-        "FW001,ALLOW,TCP,0.0.0.0/0,10.0.0.5,443,HTTPS inbound to load balancer\n"
-        "FW002,ALLOW,TCP,0.0.0.0/0,10.0.0.5,80,HTTP inbound redirect\n"
-        "FW003,ALLOW,TCP,10.0.1.0/24,10.0.2.10,5432,App servers to primary DB\n"
-        "FW004,DENY,ANY,0.0.0.0/0,10.0.2.0/24,ANY,Block direct DB access from internet\n"
-        "FW005,ALLOW,TCP,10.0.0.0/8,10.0.6.10,9090,Internal monitoring access\n"
-        "FW006,DENY,ANY,192.168.50.0/24,ANY,ANY,Block legacy VLAN\n"
-        "FW007,ALLOW,TCP,10.0.0.0/8,ANY,22,SSH from internal only\n"
-    ),
-    "Active_Directory_Export.xlsx": lambda dept: (
-        "username,display_name,email,department,title,manager,groups,last_logon,account_status\n" +
-        "\n".join(f"usr{1000+i},{n},{n.lower().replace(' ','.')}" + "@nexon.com," +
-                  f"{dept},Employee,mgr001,Domain Users;{dept}_Users,2025-04-{(i%30)+1:02d},Active"
-                  for i, n in enumerate(["Alice Johnson","Bob Smith","Carol Williams","David Brown",
-                                          "Emma Davis","Frank Miller","Grace Wilson","Henry Moore",
-                                          "Isla Taylor","James Anderson","Karen Thomas","Liam Jackson"]))
-    ),
-}
-
-def _generic_file_content(name: str, dept: str) -> str:
-    """Generate plausible text content for files not in the explicit map."""
-    base = name.rsplit(".", 1)[0].replace("_", " ")
-    lines = [
-        f"# {base}",
-        f"Department: {dept}",
-        f"Classification: CONFIDENTIAL",
-        f"Generated: 2025-04-10",
-        "",
-        f"This document contains {dept} department records.",
-        "Access is restricted to authorised personnel only.",
-        "",
-        "id,name,value,date,status",
-        "001,Record A,£12450.00,2025-01-15,Active",
-        "002,Record B,£8320.00,2025-02-03,Active",
-        "003,Record C,£19875.00,2025-02-28,Pending",
-        "004,Record D,£5100.00,2025-03-10,Active",
-        "005,Record E,£33200.00,2025-03-22,Review",
-    ]
-    return "\n".join(lines)
-
-
-@app.get("/api/files/download")
-def download_file():
-    from flask import make_response
-    name = request.args.get("name", "file.txt")
-    dept = request.args.get("dept", "General")
-    gen  = _FILE_CONTENT.get(name)
-    content = gen(dept) if gen else _generic_file_content(name, dept)
-    resp = make_response(content.encode("utf-8"))
-    resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
-    resp.headers["Content-Type"] = "text/plain; charset=utf-8"
-    resp.headers["Content-Length"] = len(content.encode("utf-8"))
-    return resp
-
-@app.get("/portal")
-def serve_portal():
-    import os as _os
-    from flask import Response as _Resp
-    base = _os.path.dirname(_os.path.abspath(__file__))
-    paths = [
-        _os.path.join(base, "employee_portal.html"),
-        _os.path.join(_os.getcwd(), "application", "employee_portal.html"),
-    ]
-    for p in paths:
-        if _os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return _Resp(f.read(), mimetype="text/html")
-    return _Resp("<h1>Employee Portal not found</h1>", mimetype="text/html")
 
 @app.get("/")
 @app.get("/dashboard")
@@ -597,6 +392,44 @@ def serve_dashboard():
             with open(p, "r", encoding="utf-8") as f:
                 return _Resp(f.read(), mimetype="text/html")
     return _Resp("<h1>InsightGuard API running</h1><p>Visit <a href='/healthz'>/healthz</a></p>", mimetype="text/html")
+
+@app.get("/company")
+def serve_company():
+    import os as _os
+    from flask import Response as _Resp
+    base = _os.path.dirname(_os.path.abspath(__file__))
+    paths = [
+        _os.path.join(base, "company_app.html"),
+        _os.path.join(_os.getcwd(), "application", "company_app.html"),
+    ]
+    for p in paths:
+        if _os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return _Resp(f.read(), mimetype="text/html")
+    return _Resp("<h1>Company portal not found</h1>", mimetype="text/html")
+
+@app.get("/api/debug/test-critical")
+def debug_test_critical():
+    """Fire a fake archive + blocked-site event and return their scores.
+    If both show severity=critical the server has the latest fix running."""
+    ts = datetime.now(timezone.utc).isoformat()
+    r_archive = _process_event({
+        "user_id":"debug_test","timestamp":ts,
+        "department":"Test","role":"Tester","name":"Debug",
+        "source":"file","file_name":"debug.zip","file_path":"/tmp/debug.zip",
+        "operation":"write","file_count":1,"data_mb":10.0,"is_archive":True,
+    })
+    r_blocked = _process_event({
+        "user_id":"debug_test","timestamp":ts,
+        "department":"Test","role":"Tester","name":"Debug",
+        "source":"web","url":"https://mega.nz/","site_name":"mega.nz",
+        "category":"cloud_storage","bytes_out":0,"blocked":True,"risky":True,
+    })
+    return jsonify({
+        "archive": {"risk_score": r_archive.get("risk_score"), "severity": r_archive.get("severity")},
+        "blocked": {"risk_score": r_blocked.get("risk_score"), "severity": r_blocked.get("severity")},
+        "fix_active": r_archive.get("severity")=="critical" and r_blocked.get("severity")=="critical",
+    })
 
 @app.get("/healthz")
 def health():
@@ -622,60 +455,6 @@ def analyse_batch():
     if len(body)>500: return jsonify({"error":"Batch limit 500"}),413
     results = [_process_event(ev) for ev in body]
     return jsonify({"summary":{"processed":len(results),"threats":sum(1 for r in results if r.get("is_anomaly"))},"results":results}),200
-
-@app.get("/api/events/simulate")
-def simulate_event():
-    return jsonify(_sim(request.args.get("type","random"))),200
-
-@app.get("/api/cert/replay")
-def cert_replay():
-    limit = int(request.args.get("limit",200))
-    speed = float(request.args.get("speed",0.3))
-    def replay_worker():
-        import sqlite3 as sq
-        conn = sq.connect(db.db_path); conn.row_factory = sq.Row
-        rows = conn.execute("""
-            SELECT ar.user_id,ar.risk_score,ar.if_score,ar.lof_score,ar.ueba_score,
-                   ar.triggered_rules,ar.detection_time,al.activity_type,al.timestamp,
-                   al.details_json,u.department
-            FROM anomaly_results ar
-            LEFT JOIN activity_logs al ON ar.log_id=al.log_id
-            LEFT JOIN users u ON ar.user_id=u.user_id
-            ORDER BY al.timestamp ASC LIMIT ?""",(limit,)).fetchall()
-        conn.close()
-        print(f"[CERT Replay] {len(rows)} events with PUB+PERS...")
-        for row in rows:
-            try: rules=json.loads(row["triggered_rules"] or "[]")
-            except: rules=[]
-            uid=row["user_id"] or "unknown"
-            ml=row["risk_score"] or 0
-            try:
-                fv_dict=json.loads(row["details_json"] or "{}")
-                arr=np.array([fv_dict.get(k,0) for k in FeatureVector.COLUMNS],dtype=float)
-                pub=pub_score(uid,arr,ml)
-            except:
-                pub={"personal_risk_score":ml,"personal_if_score":0.5,"combined_score":ml,
-                     "is_trained":False,"events_seen":0,"status":"learning (0/10 events)"}
-            pers=get_pers_score(uid,pub["combined_score"])
-            pay={
-                "user_id":uid,"department":row["department"] or "",
-                "activity_type":row["activity_type"] or "login",
-                "ml_score":ml,"personal_risk_score":pub["personal_risk_score"],
-                "pub_combined":pub["combined_score"],"pub_is_trained":pub["is_trained"],
-                "pub_events_seen":pub["events_seen"],"pub_status":pub["status"],
-                "psychometric_risk":pers["psychometric_risk"],"pers_enhancement":pers["enhancement"],
-                "risk_score":pers["pers_score"],"severity":pers["severity"],
-                "ueba_score":row["ueba_score"] or 0,"if_score":row["if_score"] or 0.0,
-                "lof_score":row["lof_score"] or 0.0,"triggered_rules":rules,
-                "timestamp":row["timestamp"] or row["detection_time"],"source":"cert_dataset",
-            }
-            _broadcast_sse(pay)
-            _upd(uid,{"risk_score":pers["pers_score"],"is_anomaly":pers["is_anomaly"],**pub},
-                 {"department":row["department"] or ""})
-            time.sleep(speed)
-        print("[CERT Replay] Complete.")
-    threading.Thread(target=replay_worker,daemon=True).start()
-    return jsonify({"message":"Replaying CERT with PUB+PERS"}),200
 
 @app.get("/api/baselines")
 def get_baselines():
@@ -734,14 +513,14 @@ def _detect_arcs(events: list) -> list:
     for i, ev in enumerate(events):
         if ev["activity_type"] == "usb":
             try:
-                usb_ts = datetime.fromisoformat(ev["timestamp"].replace("Z",""))
+                usb_ts = datetime.fromisoformat(ev["timestamp"].replace("Z", "+00:00"))
             except Exception:
                 continue
             for j in range(0, i):
                 prev = events[j]
                 if prev["activity_type"] == "file_access":
                     try:
-                        prev_ts = datetime.fromisoformat(prev["timestamp"].replace("Z",""))
+                        prev_ts = datetime.fromisoformat(prev["timestamp"].replace("Z", "+00:00"))
                     except Exception:
                         continue
                     if (usb_ts - prev_ts).total_seconds() <= 300:
@@ -764,7 +543,7 @@ def user_sessions(user_id):
                    ar.risk_score, ar.severity, ar.triggered_rules
             FROM activity_logs al
             LEFT JOIN anomaly_results ar ON ar.log_id = al.log_id
-            WHERE al.user_id = ? AND al.timestamp >= ?
+            WHERE LOWER(al.user_id) = ? AND al.timestamp >= ?
             ORDER BY al.timestamp ASC
         """, (uid, since)).fetchall()
 
@@ -774,7 +553,7 @@ def user_sessions(user_id):
 
     for row in rows:
         try:
-            ts = datetime.fromisoformat(row["timestamp"].replace("Z",""))
+            ts = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
         except Exception:
             continue
 
@@ -784,12 +563,20 @@ def user_sessions(user_id):
         except Exception:
             pass
 
-        file_name = ""
+        file_name  = ""
+        site_name  = ""
+        url        = ""
+        category   = ""
+        blocked    = False
         try:
             d = _json.loads(row["details_json"] or "{}")
-            raw = d.get("file_path","") or d.get("file_name","")
-            if raw:
-                file_name = raw.split("/")[-1].split("\\")[-1]
+            raw_path = d.get("file_path","") or d.get("file_name","")
+            if raw_path:
+                file_name = raw_path.split("/")[-1].split("\\")[-1]
+            site_name = d.get("site_name","") or d.get("url","")
+            url       = d.get("url","")
+            category  = d.get("category","")
+            blocked   = bool(d.get("blocked", False))
         except Exception:
             pass
 
@@ -800,6 +587,10 @@ def user_sessions(user_id):
             "severity":        row["severity"] or "normal",
             "risk_score":      row["risk_score"] or 0,
             "file_name":       file_name,
+            "site_name":       site_name,
+            "url":             url,
+            "category":        category,
+            "blocked":         blocked,
             "triggered_rules": rules,
         }
 
@@ -930,6 +721,15 @@ def evidence_upload():
     fpath    = EVIDENCE_DIR / fname
     f.save(str(fpath))
     db.insert_evidence(eid, log_id, user_id, str(fpath), trigger, evt_type, ts)
+    # Notify dashboard so it can add the camera icon to the matching log row
+    _broadcast_sse({
+        "type":         "evidence",
+        "evidence_id":  eid,
+        "log_id":       log_id,
+        "user_id":      user_id,
+        "event_type":   evt_type,
+        "trigger_type": trigger,
+    })
     return jsonify({"evidence_id": eid, "status": "ok"}), 200
 
 
@@ -976,12 +776,192 @@ def explain_confidence():
     return jsonify(result), 200
 
 
+@app.get("/api/explain/lime/<log_id>")
+def explain_lime(log_id):
+    """Run LIME explanation for a stored event's feature vector."""
+    import sqlite3 as _sq
+    with _sq.connect(db.db_path) as con:
+        con.row_factory = _sq.Row
+        row = con.execute("""
+            SELECT bf.features_json, ar.risk_score, ar.severity
+            FROM behaviour_features bf
+            JOIN anomaly_results ar ON ar.log_id = bf.log_id
+            WHERE bf.log_id = ?
+            LIMIT 1
+        """, (log_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Event not found"}), 404
+    try:
+        fv_dict = _json.loads(row["features_json"] or "{}")
+    except Exception:
+        return jsonify({"error": "Invalid feature data"}), 500
+    fv = FeatureVector(**{k: fv_dict.get(k, 0) for k in FeatureVector.COLUMNS})
+
+    def _score_fn(arr: np.ndarray) -> float:
+        from ai_analytics.anomaly_model import UEBAEngine
+        fv2 = FeatureVector(**{k: float(v) for k, v in zip(FeatureVector.COLUMNS, arr)})
+        ueba_s = UEBAEngine().score(fv2)[0]
+        if_s   = model._if.score(arr)
+        lof_s  = model._lof.score(arr)
+        return min((if_s * 100 * model.IF_WEIGHT +
+                    lof_s * 100 * model.LOF_WEIGHT +
+                    ueba_s * model.UEBA_WEIGHT) / 100, 1.0)
+
+    explanation = xai.generateExplanation(fv, _score_fn)
+    return jsonify({
+        "log_id":     log_id,
+        "risk_score": row["risk_score"],
+        "severity":   row["severity"],
+        **explanation.to_dict(),
+    }), 200
+
+
+# ── Kill-chain sequence definitions ──────────────────────────────────────────
+
+_KILL_CHAINS = [
+    {
+        "name":        "data_exfiltration_chain",
+        "label":       "Data Exfiltration Kill Chain",
+        "description": "File access followed by USB transfer within 30 min",
+        "stage_a":     "file_access",
+        "stage_b":     "usb",
+        "window_mins": 30,
+        "severity":    "critical",
+    },
+    {
+        "name":        "cloud_exfil_chain",
+        "label":       "Cloud Upload Exfiltration",
+        "description": "File access followed by risky web/cloud activity within 20 min",
+        "stage_a":     "file_access",
+        "stage_b":     "web",
+        "window_mins": 20,
+        "severity":    "high_risk",
+    },
+    {
+        "name":        "credential_abuse_chain",
+        "label":       "Credential Abuse Sequence",
+        "description": "Login event followed by bulk file access within 60 min",
+        "stage_a":     "login",
+        "stage_b":     "file_access",
+        "window_mins": 60,
+        "severity":    "high_risk",
+    },
+    {
+        "name":        "email_exfil_chain",
+        "label":       "Email Exfiltration Sequence",
+        "description": "File access followed by external email within 15 min",
+        "stage_a":     "file_access",
+        "stage_b":     "email",
+        "window_mins": 15,
+        "severity":    "high_risk",
+    },
+    {
+        "name":        "anti_forensics_chain",
+        "label":       "Anti-Forensics Kill Chain",
+        "description": "Process abuse / log-clear followed by file access within 10 min",
+        "stage_a":     "process_launch",
+        "stage_b":     "file_access",
+        "window_mins": 10,
+        "severity":    "critical",
+    },
+    {
+        "name":        "logon_to_usb_chain",
+        "label":       "Rapid USB Exfil After Login",
+        "description": "Login followed directly by USB transfer within 10 min",
+        "stage_a":     "login",
+        "stage_b":     "usb",
+        "window_mins": 10,
+        "severity":    "critical",
+    },
+]
+
+
+def _detect_kill_chains_from_events(events: list) -> list:
+    """
+    Detect kill-chain sequences in a time-ordered list of event dicts.
+    Each event dict must have: log_id, timestamp, activity_type, risk_score, severity.
+    Returns list of matched sequence dicts.
+    """
+    from datetime import timedelta as _td
+    results = []
+    seen = set()   # avoid duplicate matches for same pair
+
+    for i, ev_b in enumerate(events):
+        for chain in _KILL_CHAINS:
+            if ev_b.get("activity_type") != chain["stage_b"]:
+                continue
+            try:
+                ts_b = datetime.fromisoformat(ev_b["timestamp"].replace("Z", ""))
+            except Exception:
+                continue
+            cutoff = ts_b - _td(minutes=chain["window_mins"])
+            for j in range(0, i):
+                ev_a = events[j]
+                if ev_a.get("activity_type") != chain["stage_a"]:
+                    continue
+                try:
+                    ts_a = datetime.fromisoformat(ev_a["timestamp"].replace("Z", ""))
+                except Exception:
+                    continue
+                if ts_a < cutoff:
+                    continue
+                key = (chain["name"], ev_a["log_id"], ev_b["log_id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                delta = int((ts_b - ts_a).total_seconds() / 60)
+                results.append({
+                    "sequence_name":  chain["name"],
+                    "label":          chain["label"],
+                    "description":    chain["description"],
+                    "severity":       chain["severity"],
+                    "stage_a_type":   chain["stage_a"],
+                    "stage_b_type":   chain["stage_b"],
+                    "stage_a_log_id": ev_a["log_id"],
+                    "stage_b_log_id": ev_b["log_id"],
+                    "stage_a_time":   ev_a["timestamp"],
+                    "stage_b_time":   ev_b["timestamp"],
+                    "delta_mins":     delta,
+                    "stage_a_score":  ev_a.get("risk_score", 0),
+                    "stage_b_score":  ev_b.get("risk_score", 0),
+                })
+    return results
+
+
+@app.get("/api/sequences/<user_id>")
+def user_sequences(user_id):
+    """Detect temporal kill-chain sequences for a user from recent DB events."""
+    days  = request.args.get("days", 7, type=int)
+    from datetime import timedelta as _td
+    import sqlite3 as _sq
+    since = (datetime.now(timezone.utc) - _td(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    uid   = user_id.lower()
+    with _sq.connect(db.db_path) as con:
+        con.row_factory = _sq.Row
+        rows = con.execute("""
+            SELECT al.log_id, al.timestamp, al.activity_type,
+                   ar.risk_score, ar.severity
+            FROM activity_logs al
+            LEFT JOIN anomaly_results ar ON ar.log_id = al.log_id
+            WHERE al.user_id = ? AND al.timestamp >= ?
+            ORDER BY al.timestamp ASC
+        """, (uid, since)).fetchall()
+    events = [dict(r) for r in rows]
+    sequences = _detect_kill_chains_from_events(events)
+    return jsonify({
+        "user_id":   uid,
+        "days":      days,
+        "sequences": sequences,
+        "count":     len(sequences),
+    }), 200
+
+
 @app.get("/api/events/recent")
 def recent_events():
     limit = min(int(request.args.get("limit", 200)), 500)
-    # Default: only show events from the last 60 minutes so synthetic
-    # training data (timestamped hours/days ago) never pollutes the log.
-    minutes = int(request.args.get("minutes", 60))
+    # Default: show events from the last 24 hours so critical events from
+    # earlier today are visible when the dashboard is (re)opened.
+    minutes = int(request.args.get("minutes", 1440))
     from datetime import timedelta
     since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S")
     import sqlite3 as _sq
@@ -990,6 +970,7 @@ def recent_events():
         rows = con.execute("""
             SELECT
                 al.log_id, al.user_id, al.timestamp, al.activity_type, al.source,
+                al.details_json,
                 u.department, u.role, u.name,
                 ar.risk_score, ar.severity, ar.is_anomaly,
                 ar.if_score, ar.lof_score, ar.ueba_score, ar.triggered_rules
@@ -1009,16 +990,37 @@ def recent_events():
         except Exception:
             pass
         ml = round((r["if_score"] or 0) * 0.4 + (r["lof_score"] or 0) * 0.3 + (r["ueba_score"] or 0) * 0.3, 1)
-        # Extract file_name from details_json if stored
+        # Extract display fields from merged details_json
         file_name = ""
+        site_name = ""
+        url       = ""
+        category  = ""
+        blocked   = False
+        data_mb   = 0.0
+        file_count = 0
+        usb_files = []
         try:
             details = _json.loads(r["details_json"] or "{}") if "details_json" in r.keys() else {}
             raw_path = details.get("file_path","") or details.get("file_name","")
             if raw_path:
                 file_name = raw_path.split("/")[-1].split("\\")[-1]
+            op = details.get("operation","")
+            if op in ("rename","move"):
+                dest_path = details.get("destination","") or details.get("dest_path","")
+                if dest_path:
+                    dest_name = dest_path.split("/")[-1].split("\\")[-1]
+                    file_name = f"{file_name} → {dest_name}"
+            site_name  = details.get("site_name","") or details.get("url","")
+            url        = details.get("url","")
+            category   = details.get("category","")
+            blocked    = bool(details.get("blocked", False))
+            data_mb    = float(details.get("data_mb", 0) or 0)
+            file_count = int(details.get("file_count", 0) or 0)
+            usb_files  = details.get("files", [])
         except Exception:
             pass
         events.append({
+            "log_id":        r["log_id"],
             "user_id":       r["user_id"],
             "name":          r["name"] or "",
             "department":    r["department"] or "",
@@ -1035,6 +1037,13 @@ def recent_events():
             "ueba_score":    r["ueba_score"] or 0,
             "triggered_rules": rules,
             "file_name":     file_name,
+            "site_name":     site_name,
+            "url":           url,
+            "category":      category,
+            "blocked":       blocked,
+            "data_mb":       data_mb,
+            "file_count":    file_count,
+            "files":         usb_files,
         })
     return jsonify({"count": len(events), "events": events}), 200
 
@@ -1088,9 +1097,7 @@ def escalation_log():
 @app.post("/api/investigations")
 def create_investigation():
     body = request.get_json(silent=True) or {}
-    user_id = body.get("user_id", "")
-    if not user_id:
-        return jsonify({"error": "user_id required"}), 400
+    user_id = body.get("user_id", "") or "unknown"
     case_id = "case_" + str(uuid.uuid4())[:8]
     db.create_investigation(
         case_id    = case_id,
@@ -1123,15 +1130,13 @@ def update_investigation(case_id):
     body = request.get_json(silent=True) or {}
     status        = body.get("status", "")
     analyst_notes = body.get("analyst_notes")
-    ok = db.update_investigation(case_id, status=status, analyst_notes=analyst_notes)
-    if not ok:
-        return jsonify({"error": "Invalid update or case not found"}), 400
+    db.update_investigation(case_id, status=status, analyst_notes=analyst_notes)
     return jsonify({"case_id": case_id, "updated": True}), 200
 
 
 @app.get("/api/stream")
 def sse_stream():
-    q=queue.Queue(maxsize=100)
+    q=queue.Queue(maxsize=500)
     with sse_lock: sse_queues.append(q)
     @stream_with_context
     def generate():

@@ -37,25 +37,42 @@ class ScreenshotCapture:
         Local file is kept on disk regardless of upload result.
         """
         try:
-            mss_module = __import__("mss")
-            Image      = __import__("PIL.Image", fromlist=["Image"]).Image
+            from PIL import Image, ImageGrab
         except ImportError as exc:
             logger.warning("[ScreenshotCapture] Import failed (%s) — skipped", exc)
             return False
 
         try:
+            import time as _time
+            import platform as _platform
             ts    = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
             fname = f"{ts}_{trigger_type}_{event_type}.jpg"
             fpath = self.EVIDENCE_DIR / fname
 
-            with mss_module.mss() as sct:
-                shot = sct.grab(sct.monitors[0])   # monitors[0] = all monitors combined
-                # Explicit BGRA → RGB conversion (avoids "BGRX" raw decoder
-                # compatibility issues across Pillow versions)
-                img = Image.frombytes("RGBA", (shot.width, shot.height), bytes(shot.bgra))
-                r, g, b, a = img.split()
-                img = Image.merge("RGB", (b, g, r))   # BGRA → RGB channel reorder
-                img.save(str(fpath), format="JPEG", quality=75)
+            # On Windows: minimise the agent terminal so the screenshot
+            # shows what the employee was actually doing, not this window.
+            hwnd = None
+            if _platform.system() == "Windows":
+                try:
+                    import ctypes as _ct
+                    hwnd = _ct.windll.kernel32.GetConsoleWindow()
+                    if hwnd:
+                        _ct.windll.user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
+                        _time.sleep(0.4)   # let the window animate out
+                except Exception:
+                    hwnd = None
+
+            img = ImageGrab.grab(all_screens=True)
+            img = img.convert("RGB")
+            img.save(str(fpath), format="JPEG", quality=75)
+
+            # Restore terminal window
+            if hwnd:
+                try:
+                    import ctypes as _ct
+                    _ct.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+                except Exception:
+                    pass
 
             logger.info("[ScreenshotCapture] Saved %s", fname)
             return self._upload(fpath, trigger_type, event_type, log_id)

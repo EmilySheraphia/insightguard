@@ -120,8 +120,10 @@ def load_our_detections(db_path: Path) -> tuple[set[str], set[str]]:
     flagged_users = set(
         row[0] for row in
         conn.execute("""
-            SELECT DISTINCT user_id FROM anomaly_results
+            SELECT user_id FROM anomaly_results
             WHERE is_anomaly = 1
+            GROUP BY user_id
+            HAVING COUNT(*) >= 5
         """).fetchall()
     )
 

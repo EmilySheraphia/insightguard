@@ -2,9 +2,9 @@
   "_comment": "Per-role UEBA threshold configuration. Values override default detection thresholds. Applied at score time in app.py::_role_adjusted_ueba(). Editable via PUT /api/config.",
   "global": {
     "severity_thresholds": {
-      "critical": 80,
+      "suspicious": 45,
       "high_risk": 60,
-      "suspicious": 45
+      "critical": 80
     }
   },
   "roles": {
@@ -275,7 +275,7 @@
     "default": {
       "bulk_download_mb": 200,
       "bulk_file_count": 30,
-      "description": "Standard employee — all UEBA rules at full sensitivity",
+      "description": "Standard employee \u2014 all UEBA rules at full sensitivity",
       "external_email_recipients": 5,
       "extreme_file_count": 100,
       "large_attachment_mb": 25,

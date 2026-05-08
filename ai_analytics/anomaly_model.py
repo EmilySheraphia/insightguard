@@ -60,7 +60,7 @@ class UEBAEngine:
         ("usb_exfil",                22, lambda f: f.usb_transfer and f.usb_data_mb >= 10),
         ("usb_large_exfil",          35, lambda f: f.usb_transfer and f.usb_data_mb >= 50),
         ("external_email_bulk",      14, lambda f: f.external_email and f.recipient_count >= 5),
-        ("risky_web",                20, lambda f: f.risky_web),
+        ("risky_web",                35, lambda f: f.risky_web),
         ("large_attachment",         12, lambda f: f.attachment_mb >= 25),
         ("off_hours_file_access",    15, lambda f: f.event_type_code == 2 and f.is_off_hours),
         ("sensitive_file_bulk",      22, lambda f: f.event_type_code == 2 and f.file_count >= 5),
@@ -83,6 +83,15 @@ class UEBAEngine:
                                                     and e.get("destination") in _CLOUD_UPLOAD_DOMAINS),
         ("webmail_outbound",       15, lambda f, e: e.get("activity_type") == "webmail_activity"
                                                     and e.get("compose_detected") is True),
+        ("clipboard_credential",   40, lambda f, e: e.get("activity_type") == "clipboard"
+                                                    and e.get("pattern_matched") in ("credential_pattern", "api_key_pattern")),
+        ("clipboard_card_number",  35, lambda f, e: e.get("activity_type") == "clipboard"
+                                                    and e.get("pattern_matched") == "card_number"),
+        ("clipboard_email_list",   20, lambda f, e: e.get("activity_type") == "clipboard"
+                                                    and e.get("pattern_matched") == "email_list"),
+        ("clipboard_bulk_copy",    15, lambda f, e: e.get("activity_type") == "clipboard"
+                                                    and e.get("pattern_matched") == "volume"
+                                                    and int(e.get("char_count", 0)) >= 2000),
     ]
 
     def score(self, fv: FeatureVector, extra: dict = None) -> tuple[int, list[str]]:

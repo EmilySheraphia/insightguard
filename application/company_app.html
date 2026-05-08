@@ -1173,7 +1173,7 @@ function visitSite(bm){
   document.getElementById('browserUrl').value=bm.domain;
   currentBrowserHistory.push(bm.domain); saveUserState();
   const risky=(bm.category==='tor'||bm.category==='cloud_storage'||bm.category==='file_sharing');
-  fireEvent({source:'web',url:bm.domain,category:bm.category,bytes_out:bm.bytes,blocked:false},'Browsed: '+bm.domain);
+  fireEvent({source:'web',url:bm.domain,category:bm.category,bytes_out:bm.bytes,blocked:risky,risky:risky},'Browsed: '+bm.domain);
   const p=PAGES[bm.page]||{icon:bm.icon,name:bm.label,url:bm.domain,body:'Page content would appear here.'};
   const content=document.getElementById('browserContent');
   content.innerHTML=`
@@ -1208,7 +1208,7 @@ function browserBack(){
 }
 function uploadToCloud(domain,bytes){
   const uploadMB=Math.floor(Math.random()*200)+50;
-  fireEvent({source:'web',url:domain,category:'cloud_storage',bytes_out:uploadMB*1024,blocked:false},'Cloud Upload: '+uploadMB+' MB to '+domain);
+  fireEvent({source:'web',url:domain,category:'cloud_storage',bytes_out:uploadMB*1024,blocked:true,risky:true,activity_type:'file_upload',destination:domain},'Cloud Upload: '+uploadMB+' MB to '+domain);
   toast('Upload started','Uploading '+uploadMB+' MB to '+domain,'warning');
 }
 

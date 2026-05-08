@@ -1,10 +1,14 @@
 {
-    "enabled": false,
+    "enabled": true,
     "smtp_host": "smtp.gmail.com",
     "smtp_port": 465,
-    "smtp_user": "",
-    "smtp_password": "",
-    "recipient_email": "",
-    "min_severity": "critical",
+    "smtp_user": "adminsecuritynexon@gmail.com",
+    "smtp_password": "siip cygd pogu zxbv",
+    "recipient_email": "adminsecuritynexon@gmail.com",
+    "min_severity": "high_risk",
+    "severities": [
+        "high_risk",
+        "critical"
+    ],
     "dashboard_url": "http://localhost:5000"
 }

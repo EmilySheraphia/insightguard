@@ -10,3 +10,8 @@ dist/
 build/
 storage/user_baselines/
 *.pkl
+storage/insightguard.db
+storage/insightguard.db-shm
+storage/insightguard.db-wal
+storage/evidence/
+.claude/

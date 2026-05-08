@@ -186,7 +186,7 @@ class PerUserBaselineStore:
 
         if combined >= 80:   sev = "critical"
         elif combined >= 60: sev = "high_risk"
-        elif combined >= 35: sev = "suspicious"
+        elif combined >= 45: sev = "suspicious"
         else:                sev = "normal"
 
         return {
@@ -195,7 +195,7 @@ class PerUserBaselineStore:
             "global_score":        global_score,
             "combined_score":      combined,
             "combined_severity":   sev,
-            "is_anomaly":          combined >= 35,
+            "is_anomaly":          combined >= 45,
             "is_trained":          b.is_trained,
             "events_seen":         b.event_count,
             "status":              b.status,
