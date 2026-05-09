@@ -328,8 +328,10 @@ def _process_event(raw):
         "name":raw.get("name",""),
     }
     _broadcast_sse(pay)
-    # Escalation
-    _escalation.enqueue({**pay, "triggered_rules": result["triggered_rules"]})
+    # Escalation — agent events self-trigger via /api/escalation/resend after
+    # screenshot upload, so we only queue non-agent events here.
+    if not raw.get("agent"):
+        _escalation.enqueue({**pay, "triggered_rules": result["triggered_rules"]})
     return {**pay,"is_anomaly":result["is_anomaly"],"timestamp":log.timestamp.isoformat()}
 
 

@@ -230,6 +230,22 @@ def enqueue_event(payload: dict):
     _event_queue.put(payload)
 
 
+def _trigger_escalation_email(cfg: dict, log_id: str) -> None:
+    """
+    Ask the server to send the escalation email for log_id.
+    Called AFTER the screenshot is uploaded so the server can attach it.
+    Runs in a daemon thread so it doesn't block the sender thread.
+    """
+    def _post():
+        try:
+            url = cfg["server_url"].rstrip("/") + "/api/escalation/resend"
+            requests.post(url, json={"log_id": log_id}, timeout=10)
+            _add_log(f"{G}[EMAIL]{RST} Escalation email triggered for {log_id}")
+        except Exception as e:
+            _add_log(f"{Y}[EMAIL]{RST} Email trigger failed: {e}")
+    threading.Thread(target=_post, daemon=True).start()
+
+
 def _sender_thread(cfg: dict):
     url = cfg["server_url"].rstrip("/") + "/api/events"
     session = requests.Session()
@@ -262,15 +278,19 @@ def _sender_thread(cfg: dict):
                         cooldown_ok = False
                     if cooldown_ok:
                         _screenshot_last[uid] = now
+                        log_id = resp_data.get("log_id", "")
                         ok = _screenshot.capture(
                             trigger_type="severity",
                             event_type=payload.get("activity_type", payload.get("source", "unknown")),
-                            log_id=resp_data.get("log_id", ""),
+                            log_id=log_id,
                         )
                         if ok:
-                            _add_log(f"{G}[SCREENSHOT]{RST} Captured — score {score}, id {resp_data.get('log_id','?')}")
+                            _add_log(f"{G}[SCREENSHOT]{RST} Captured — score {score}, id {log_id}")
                         else:
                             _add_log(f"{Y}[SCREENSHOT]{RST} Capture failed — check mss/Pillow installation")
+                        # Trigger escalation email now — screenshot is already in DB
+                        if log_id and is_critical:
+                            _trigger_escalation_email(cfg, log_id)
             else:
                 _stats["errors"] += 1
                 _add_log(f"{Y}[WARN]{RST} Server returned {resp.status_code}")
@@ -298,6 +318,7 @@ def _base(cfg: dict, source: str) -> dict:
         "department": cfg["department"],
         "role":       cfg["role"],
         "device_id":  cfg["device_id"],
+        "agent":      True,   # marks this as a real endpoint agent event
     }
 
 
