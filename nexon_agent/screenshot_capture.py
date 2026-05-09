@@ -75,11 +75,14 @@ class ScreenshotCapture:
                     pass
 
             logger.info("[ScreenshotCapture] Saved %s", fname)
-            return self._upload(fpath, trigger_type, event_type, log_id)
+            uploaded = self._upload(fpath, trigger_type, event_type, log_id)
+            # Return the local Path on success so callers can attach it to emails.
+            # Return None on failure (falsy, same as old False behaviour).
+            return fpath if uploaded else None
 
         except Exception as exc:
             logger.warning("[ScreenshotCapture] Capture failed: %s", exc)
-            return False
+            return None
 
     def _upload(self, fpath: Path, trigger_type: str,
                 event_type: str, log_id: str) -> bool:
