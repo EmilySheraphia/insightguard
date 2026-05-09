@@ -212,12 +212,6 @@ def _check_threat_patterns(cfg: dict):
             "severity_override": threat["severity_hint"],
         })
         enqueue_event(payload)
-        if _screenshot:
-            _screenshot.capture(
-                trigger_type="pattern",
-                event_type=threat["threat_type"],
-                log_id="",
-            )
         _stats["alerts"] += 1
         _add_log(f"{R}[THREAT]{RST} {threat['threat_type']}: {threat['description']}")
 
@@ -254,13 +248,18 @@ def _sender_thread(cfg: dict):
                 resp_data = resp.json()
                 score = resp_data.get("risk_score", "?")
                 _add_log(f"{G}[SENT]{RST} {payload.get('source','?')} → score {score}")
-                if isinstance(score, (int, float)) and score >= 45 and _screenshot:
+                if isinstance(score, (int, float)) and _screenshot:
                     uid = payload.get("user_id", "")
                     now = time.time()
                     severity = resp_data.get("severity", "")
-                    # Critical events always get a screenshot — bypass cooldown
                     is_critical = severity == "critical" or score >= 80
-                    cooldown_ok = is_critical or (now - _screenshot_last.get(uid, 0) >= _SCREENSHOT_COOLDOWN)
+                    # Take screenshot for suspicious+ (score≥45) OR any critical event.
+                    # severity_override can mark events critical even if score < 45
+                    # (e.g. USB insert for a new user with no PUB baseline yet).
+                    if score >= 45 or is_critical:
+                        cooldown_ok = is_critical or (now - _screenshot_last.get(uid, 0) >= _SCREENSHOT_COOLDOWN)
+                    else:
+                        cooldown_ok = False
                     if cooldown_ok:
                         _screenshot_last[uid] = now
                         ok = _screenshot.capture(
