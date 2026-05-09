@@ -1835,84 +1835,110 @@ class OutlookMonitor:
 
         try:
             outlook = win32com.client.Dispatch("Outlook.Application")
+            ns      = outlook.GetNamespace("MAPI")
+            sent_folder = ns.GetDefaultFolder(5)   # 5 = olFolderSentMail
         except Exception as e:
             _add_log(f"{Y}[OUTLOOK]{RST} Outlook not running or not installed — {e}")
             return
 
-        cfg            = self._cfg
-        company_domain = self._company_domain
-
-        class _OutlookEvents:
-            def ItemSend(self, item, cancel):
+        # Seed seen_ids with emails already in Sent Items so we don't
+        # re-report emails sent before the agent started.
+        seen_ids: set = set()
+        try:
+            items = sent_folder.Items
+            for i in range(1, min(items.Count + 1, 201)):
                 try:
-                    if item.Class != 43:   # 43 = olMailItem
-                        return
+                    seen_ids.add(items.Item(i).EntryID)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-                    recipient_count = item.Recipients.Count
+        _add_log(
+            f"{G}[OUTLOOK MONITOR]{RST} Polling Sent Items every 10 s "
+            f"({len(seen_ids)} existing emails ignored)"
+        )
 
-                    # Sum all attachment sizes
-                    attachment_mb = 0.0
-                    for i in range(1, item.Attachments.Count + 1):
-                        try:
-                            attachment_mb += item.Attachments.Item(i).Size / 1_048_576
-                        except Exception:
-                            pass
+        import time as _t
+        while True:
+            try:
+                items = sent_folder.Items
+                items.Sort("[SentOn]", True)   # newest first
 
-                    # Check if any recipient is outside the company domain
-                    external = False
-                    if company_domain:
-                        for i in range(1, recipient_count + 1):
+                new_items = []
+                for i in range(1, items.Count + 1):
+                    try:
+                        item = items.Item(i)
+                        eid  = item.EntryID
+                        if eid in seen_ids:
+                            break   # sorted newest-first: once we hit a known ID, stop
+                        seen_ids.add(eid)
+                        new_items.append(item)
+                    except Exception:
+                        pass
+
+                for item in reversed(new_items):   # process oldest-first
+                    try:
+                        recipient_count = item.Recipients.Count
+
+                        attachment_mb = 0.0
+                        for i in range(1, item.Attachments.Count + 1):
                             try:
-                                recip = item.Recipients.Item(i)
-                                addr  = ""
-                                try:
-                                    addr = recip.Address.lower()
-                                except Exception:
-                                    pass
-                                # Exchange GAL addresses start with /o= — resolve to SMTP
-                                if not addr or addr.startswith("/o="):
-                                    try:
-                                        addr = recip.AddressEntry \
-                                                    .GetExchangeUser() \
-                                                    .PrimarySmtpAddress.lower()
-                                    except Exception:
-                                        pass
-                                if addr and "@" in addr:
-                                    if addr.split("@")[1] != company_domain:
-                                        external = True
-                                        break
+                                attachment_mb += item.Attachments.Item(i).Size / 1_048_576
                             except Exception:
                                 pass
 
-                    payload = _base(cfg, "mail_gateway")
-                    payload.update({
-                        "source":          "email",
-                        "direction":       "sent",
-                        "recipient_count": recipient_count,
-                        "attachment_mb":   round(attachment_mb, 2),
-                        "external":        external,
-                    })
-                    enqueue_event(payload)
+                        external = False
+                        company_domain = self._company_domain
+                        if company_domain:
+                            for i in range(1, recipient_count + 1):
+                                try:
+                                    recip = item.Recipients.Item(i)
+                                    addr  = ""
+                                    try:
+                                        addr = recip.Address.lower()
+                                    except Exception:
+                                        pass
+                                    # Exchange GAL addresses start with /o= — resolve to SMTP
+                                    if not addr or addr.startswith("/o="):
+                                        try:
+                                            addr = (recip.AddressEntry
+                                                        .GetExchangeUser()
+                                                        .PrimarySmtpAddress.lower())
+                                        except Exception:
+                                            pass
+                                    if addr and "@" in addr:
+                                        if addr.split("@")[1] != company_domain:
+                                            external = True
+                                            break
+                                except Exception:
+                                    pass
 
-                    if external:
-                        _add_log(f"{R}[EMAIL — EXTERNAL]{RST} "
-                                 f"{recipient_count} recipient(s), "
-                                 f"{attachment_mb:.1f} MB attachment")
-                    else:
-                        _add_log(f"{C}[EMAIL — INTERNAL]{RST} "
-                                 f"{recipient_count} recipient(s), "
-                                 f"{attachment_mb:.1f} MB attachment")
+                        payload = _base(self._cfg, "mail_gateway")
+                        payload.update({
+                            "source":          "email",
+                            "direction":       "sent",
+                            "recipient_count": recipient_count,
+                            "attachment_mb":   round(attachment_mb, 2),
+                            "external":        external,
+                        })
+                        enqueue_event(payload)
 
-                except Exception as e:
-                    _add_log(f"{Y}[OUTLOOK]{RST} Handler error: {e}")
+                        if external:
+                            _add_log(f"{R}[EMAIL — EXTERNAL]{RST} "
+                                     f"{recipient_count} recipient(s), "
+                                     f"{attachment_mb:.1f} MB attachment")
+                        else:
+                            _add_log(f"{C}[EMAIL — INTERNAL]{RST} "
+                                     f"{recipient_count} recipient(s), "
+                                     f"{attachment_mb:.1f} MB attachment")
+                    except Exception:
+                        pass
 
-        try:
-            win32com.client.WithEvents(outlook, _OutlookEvents)
-            _add_log(f"{G}[OUTLOOK MONITOR]{RST} Connected to Outlook — monitoring sent emails")
-            import pythoncom as _pc
-            _pc.PumpMessages()   # blocks this thread, receives COM events
-        except Exception as e:
-            _add_log(f"{Y}[OUTLOOK]{RST} Event hook failed: {e}")
+            except Exception as e:
+                _add_log(f"{Y}[OUTLOOK]{RST} Poll error: {e}")
+
+            _t.sleep(10)   # poll every 10 seconds
 
 
 # ══════════════════════════════════════════════════════════════════════════════

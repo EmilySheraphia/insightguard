@@ -125,13 +125,9 @@ class EscalationEngine:
         return self._send_email(payload)
 
     def _drain_loop(self) -> None:
-        import time as _time
         while True:
             try:
                 payload = self._queue.get(timeout=5)
-                # Wait 5 s so the agent has time to upload the screenshot
-                # before we send the email (otherwise screenshot is missing).
-                _time.sleep(5)
                 result  = self._send_email(payload)
                 self._log_escalation(payload, result["status"], result.get("error", ""))
             except queue.Empty:
@@ -191,18 +187,27 @@ class EscalationEngine:
           </div>
         </div>
         """
-        # Collect screenshot attachments linked to this event
+        # Collect screenshot attachments — poll DB for up to 15 s so the agent
+        # has time to capture and upload before the email is sent.
+        import time as _time
         screenshot_data: list[bytes] = []
         log_id = payload.get("log_id", "")
         if log_id and self._db:
-            try:
-                evidence_rows = self._db.get_evidence_by_event(log_id)
-                for row in evidence_rows[:3]:   # attach up to 3 screenshots
-                    fpath = Path(row["file_path"])
-                    if fpath.exists():
-                        screenshot_data.append(fpath.read_bytes())
-            except Exception as e:
-                print(f"[Escalation] Evidence fetch error: {e}")
+            for _attempt in range(15):
+                try:
+                    evidence_rows = self._db.get_evidence_by_event(log_id)
+                    if evidence_rows:
+                        for row in evidence_rows[:3]:   # attach up to 3 screenshots
+                            fpath = Path(row["file_path"])
+                            if fpath.exists():
+                                screenshot_data.append(fpath.read_bytes())
+                        break   # found — stop polling
+                except Exception as e:
+                    print(f"[Escalation] Evidence fetch error: {e}")
+                    break
+                _time.sleep(1)
+            if not screenshot_data:
+                print(f"[Escalation] No screenshot found for {log_id} after 15 s")
 
         try:
             ctx = ssl.create_default_context()
