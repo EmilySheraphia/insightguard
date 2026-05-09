@@ -1784,13 +1784,15 @@ function loadEscalationLog(){
       +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">User</th>'
       +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Score</th>'
       +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Recipient</th>'
-      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Status</th></tr>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Status</th>'
+      +'<th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:500">Error</th></tr>'
       +data.entries.map(e=>`<tr style="border-bottom:1px solid var(--border-subtle)">
         <td style="padding:4px 6px;color:var(--text-muted)">${(e.sent_at||'').slice(11,19)}</td>
         <td style="padding:4px 6px">${e.user_id||'—'}</td>
         <td style="padding:4px 6px">${e.risk_score||0}</td>
         <td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">${e.sent_to||'—'}</td>
         <td style="padding:4px 6px;color:${e.status==='sent'?'var(--green)':'var(--red)'}">${e.status||'—'}</td>
+        <td style="padding:4px 6px;font-size:10px;color:var(--red);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.error||'').replace(/"/g,"'")}">${e.error||''}</td>
       </tr>`).join('')+'</table>';
   }).catch(()=>{});
 }
