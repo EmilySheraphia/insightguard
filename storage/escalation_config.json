@@ -3,7 +3,7 @@
     "smtp_host": "smtp.gmail.com",
     "smtp_port": 465,
     "smtp_user": "adminsecuritynexon@gmail.com",
-    "smtp_password": "siipcygdpoguzxbv",
+    "smtp_password": "pahrsyblbmrmmymh",
     "recipient_email": "adminsecuritynexon@gmail.com",
     "min_severity": "high_risk",
     "severities": [
