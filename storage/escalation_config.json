@@ -1,7 +1,7 @@
 {
     "enabled": true,
     "smtp_host": "smtp.gmail.com",
-    "smtp_port": 465,
+    "smtp_port": 587,
     "smtp_user": "adminsecuritynexon@gmail.com",
     "smtp_password": "pahrsyblbmrmmymh",
     "recipient_email": "adminsecuritynexon@gmail.com",

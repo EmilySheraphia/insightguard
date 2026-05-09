@@ -210,25 +210,40 @@ class EscalationEngine:
                 print(f"[Escalation] No screenshot found for {log_id} after 15 s")
 
         try:
-            ctx = ssl.create_default_context()
             # Strip spaces — Gmail app passwords are displayed with spaces but
-            # must be used without (e.g. "siip cygd pogu zxbv" → "siipcygdpoguzxbv")
+            # must be sent without (e.g. "pahr sbyl bmrm mymh" → "pahrsyblbmrmmymh")
             smtp_user = cfg["smtp_user"].strip()
             smtp_pass = cfg["smtp_password"].replace(" ", "").strip()
-            with smtplib.SMTP_SSL(cfg["smtp_host"], int(cfg["smtp_port"]), context=ctx) as server:
-                server.login(smtp_user, smtp_pass)
-                msg = MIMEMultipart("mixed")
-                msg["Subject"] = subject
-                msg["From"]    = smtp_user
-                msg["To"]      = cfg["recipient_email"].strip()
-                msg.attach(MIMEText(body_html, "html"))
-                for i, img_bytes in enumerate(screenshot_data):
-                    img_part = MIMEImage(img_bytes, _subtype="jpeg")
-                    img_part.add_header("Content-Disposition", "attachment",
-                                        filename=f"screenshot_{i+1}.jpg")
-                    msg.attach(img_part)
-                server.sendmail(smtp_user, cfg["recipient_email"].strip(), msg.as_string())
-            print(f"[Escalation] Email sent → {cfg['recipient_email']} for {payload.get('user_id')}")
+            recipient = cfg["recipient_email"].strip()
+            port      = int(cfg["smtp_port"])
+
+            msg = MIMEMultipart("mixed")
+            msg["Subject"] = subject
+            msg["From"]    = smtp_user
+            msg["To"]      = recipient
+            msg.attach(MIMEText(body_html, "html"))
+            for i, img_bytes in enumerate(screenshot_data):
+                img_part = MIMEImage(img_bytes, _subtype="jpeg")
+                img_part.add_header("Content-Disposition", "attachment",
+                                    filename=f"screenshot_{i+1}.jpg")
+                msg.attach(img_part)
+
+            ctx = ssl.create_default_context()
+            if port == 465:
+                # Direct SSL (may be blocked on some cloud hosts)
+                with smtplib.SMTP_SSL(cfg["smtp_host"], port, context=ctx) as server:
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, recipient, msg.as_string())
+            else:
+                # STARTTLS — works on port 587, not blocked by Render/cloud hosts
+                with smtplib.SMTP(cfg["smtp_host"], port) as server:
+                    server.ehlo()
+                    server.starttls(context=ctx)
+                    server.ehlo()
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, recipient, msg.as_string())
+
+            print(f"[Escalation] Email sent → {recipient} for {payload.get('user_id')}")
             return {"status": "sent", "error": ""}
         except Exception as e:
             print(f"[Escalation] Email failed: {e}")
