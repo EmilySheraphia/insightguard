@@ -1170,6 +1170,9 @@ class DnsMonitor:
             _record_behaviour("blocked_site", path=domain)
             _check_threat_patterns(self._cfg)
             _stats["alerts"] += 1
+            # Force screenshot bypass — blocked site always gets a screenshot
+            uid = self._cfg.get("user_id", "")
+            _screenshot_last[uid] = 0
             print(f"\n{R}{'!'*50}{RST}")
             print(f"{R}  BLOCKED SITE (DNS): {domain}{RST}")
             print(f"{R}  Sending critical event to InsightGuard...{RST}")
@@ -1553,6 +1556,8 @@ class BrowserMonitor:
             _record_behaviour("blocked_site", path=_domain(url))
             _check_threat_patterns(self._cfg)
             _stats["alerts"] += 1
+            uid = self._cfg.get("user_id", "")
+            _screenshot_last[uid] = 0  # Force screenshot bypass — blocked site always gets a screenshot
             print(f"\n{R}{'!'*50}{RST}")
             print(f"{R}  BLOCKED SITE DETECTED: {_domain(url)}{RST}")
             print(f"{R}  Sending critical event to InsightGuard...{RST}")
@@ -1838,7 +1843,7 @@ class OutlookMonitor:
         company_domain = self._company_domain
 
         class _OutlookEvents:
-            def OnItemSend(self, item, cancel):
+            def ItemSend(self, item, cancel):
                 try:
                     if item.Class != 43:   # 43 = olMailItem
                         return
