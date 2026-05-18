@@ -231,13 +231,14 @@ def enqueue_event(payload: dict):
 
 
 def _trigger_escalation_email(cfg: dict, log_id: str,
-                               screenshot_path: "str | None" = None) -> None:
+                               screenshot_path: "str | None" = None,
+                               severity: str = "critical",
+                               risk_score: int = 0) -> None:
     """
-    Send the escalation alert email directly from the agent using Gmail SMTP.
+    Send alert email directly from the Windows agent using Gmail SMTP.
+    Reads credentials from config.json["email_alerts"] — no server API call
+    needed (the server strips the password from /api/escalation/config).
     Runs on a daemon thread so it never blocks the sender thread.
-
-    Why here and not on the server: Render blocks outbound SMTP (ports 465/587),
-    so the Windows agent (which has no port restrictions) sends the email instead.
     """
     def _send():
         import smtplib, ssl as _ssl
@@ -246,18 +247,12 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
         from email.mime.image import MIMEImage as _MMI
         from html import escape as _esc
 
-        # 1. Fetch escalation config from server
-        try:
-            resp = requests.get(
-                cfg["server_url"].rstrip("/") + "/api/escalation/config",
-                timeout=8,
-            )
-            ecfg = resp.json()
-        except Exception as e:
-            _add_log(f"{Y}[EMAIL]{RST} Could not fetch email config: {e}")
-            return
+        # Read email config from local config.json — credentials never
+        # leave the agent machine (server endpoint strips the password)
+        ecfg = cfg.get("email_alerts", {})
 
-        if not ecfg.get("enabled"):
+        if not ecfg.get("enabled", False):
+            _add_log(f"{DIM}[EMAIL]{RST} Email alerts disabled in config.json")
             return
 
         smtp_user = ecfg.get("smtp_user", "").strip()
@@ -265,41 +260,34 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
         recipient = ecfg.get("recipient_email", "").strip()
         smtp_host = ecfg.get("smtp_host", "smtp.gmail.com")
         smtp_port = int(ecfg.get("smtp_port", 587))
+        allowed_sevs = ecfg.get("severities", ["critical"])
 
         if not smtp_user or not smtp_pass or not recipient:
-            _add_log(f"{Y}[EMAIL]{RST} SMTP credentials not configured")
+            _add_log(f"{Y}[EMAIL]{RST} email_alerts not configured in config.json")
             return
 
-        # 2. Fetch event details for the email body
-        try:
-            ev_resp = requests.get(
-                cfg["server_url"].rstrip("/") + "/api/users/"
-                + cfg["user_id"] + "/risk",
-                timeout=8,
-            )
-            ev_data = ev_resp.json().get("profile", {})
-        except Exception:
-            ev_data = {}
+        if severity not in allowed_sevs:
+            return  # severity below threshold
 
         user_id    = _esc(cfg.get("user_id", ""))
         department = _esc(cfg.get("department", ""))
         sev_colors = {"critical": "#f85149", "high_risk": "#db6d28",
                       "suspicious": "#e3b341", "normal": "#3fb950"}
-        sev        = ev_data.get("current_severity", "critical")
-        score      = ev_data.get("risk_score", "—")
-        color      = sev_colors.get(sev, "#f85149")
+        color = sev_colors.get(severity, "#f85149")
+        dashboard_url = cfg.get("server_url", "").rstrip("/")
 
-        subject = f"[InsightGuard ALERT] {sev.upper()} — {user_id} @ {department}"
+        subject = (f"[InsightGuard ALERT] {severity.upper().replace('_',' ')} — "
+                   f"{user_id} @ {department}")
         body_html = f"""
         <div style="font-family:Arial,sans-serif;max-width:600px">
           <div style="background:#161b22;padding:20px;border-radius:8px">
             <h2 style="color:#e6edf3;margin:0 0 16px">InsightGuard — Insider Threat Alert</h2>
             <div style="background:#21262d;border-radius:6px;padding:16px;margin-bottom:12px">
               <div style="font-size:13px;color:#8b949e;margin-bottom:4px">Risk Score</div>
-              <div style="font-size:32px;font-weight:700;color:{color}">{score}</div>
+              <div style="font-size:32px;font-weight:700;color:{color}">{risk_score}</div>
               <div style="display:inline-block;background:{color}22;border:1px solid {color}44;
                           border-radius:4px;padding:2px 10px;font-size:12px;color:{color};margin-top:6px">
-                {sev.upper().replace('_',' ')}
+                {severity.upper().replace('_',' ')}
               </div>
             </div>
             <table style="width:100%;font-size:13px;color:#e6edf3;border-collapse:collapse">
@@ -309,7 +297,7 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
                   <td style="padding:6px 0">{department}</td></tr>
             </table>
             <div style="margin-top:16px;padding-top:12px;border-top:1px solid #30363d">
-              <a href="{ecfg.get('dashboard_url','')}" style="background:#58a6ff;color:#fff;
+              <a href="{dashboard_url}" style="background:#58a6ff;color:#fff;
                  padding:8px 16px;border-radius:6px;text-decoration:none;font-size:13px">
                 View Dashboard
               </a>
@@ -318,14 +306,12 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
         </div>
         """
 
-        # 3. Build MIME message
         msg = _MMP("mixed")
         msg["Subject"] = subject
         msg["From"]    = smtp_user
         msg["To"]      = recipient
         msg.attach(_MMT(body_html, "html"))
 
-        # Attach screenshot if path provided
         if screenshot_path:
             try:
                 with open(screenshot_path, "rb") as fh:
@@ -334,9 +320,8 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
                                         filename="screenshot.jpg")
                     msg.attach(img_part)
             except Exception as e:
-                _add_log(f"{Y}[EMAIL]{RST} Could not attach screenshot: {e}")
+                _add_log(f"{Y}[EMAIL]{RST} Screenshot attach failed: {e}")
 
-        # 4. Send via Gmail SMTP (runs on Windows — no port restrictions)
         try:
             ctx = _ssl.create_default_context()
             if smtp_port == 465:
@@ -350,7 +335,7 @@ def _trigger_escalation_email(cfg: dict, log_id: str,
                     s.ehlo()
                     s.login(smtp_user, smtp_pass)
                     s.sendmail(smtp_user, recipient, msg.as_string())
-            _add_log(f"{G}[EMAIL]{RST} Alert email sent to {recipient}")
+            _add_log(f"{G}[EMAIL]{RST} Alert email sent → {recipient} [{severity}, score {risk_score}]")
         except Exception as e:
             _add_log(f"{R}[EMAIL]{RST} SMTP failed: {e}")
 
@@ -400,9 +385,12 @@ def _sender_thread(cfg: dict):
                         else:
                             _add_log(f"{Y}[SCREENSHOT]{RST} Capture failed — check mss/Pillow installation")
                         # Send alert email from agent (Render blocks SMTP, Windows doesn't)
-                        if is_critical:
-                            shot_path = str(ok) if ok else None
-                            _trigger_escalation_email(cfg, log_id, shot_path)
+                        shot_path = str(ok) if ok else None
+                        _trigger_escalation_email(
+                            cfg, log_id, shot_path,
+                            severity=severity,
+                            risk_score=int(score) if isinstance(score, (int, float)) else 0,
+                        )
             else:
                 _stats["errors"] += 1
                 _add_log(f"{Y}[WARN]{RST} Server returned {resp.status_code}")

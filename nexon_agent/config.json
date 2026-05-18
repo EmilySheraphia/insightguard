@@ -6,6 +6,15 @@
     "role": "Software Engineer",
     "device_id": "NEXON-LAPTOP-001",
     "company_domain": "gmail.com",
+    "email_alerts": {
+        "enabled": true,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "smtp_user": "adminsecuritynexon@gmail.com",
+        "smtp_password": "pahrsyblbmrmmymh",
+        "recipient_email": "adminsecuritynexon@gmail.com",
+        "severities": ["critical", "high_risk"]
+    },
     "poll_interval_seconds": 3,
     "browser_poll_interval_seconds": 3,
     "usb_poll_interval_seconds": 5,
